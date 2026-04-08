@@ -1,0 +1,35 @@
+# Secrets and local-only files
+.env
+.env.*
+!.env.example
+explanation.txt
+scripts/push.ps1
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+*.sqlite
+*.db
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+.vercel
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
