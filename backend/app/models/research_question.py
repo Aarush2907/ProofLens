@@ -7,6 +7,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 SUBMITTED = "submitted"
+RUNNING = "running"
+COMPLETED = "completed"
+FAILED = "failed"
 
 
 def utc_now() -> datetime:
@@ -14,10 +17,10 @@ def utc_now() -> datetime:
 
 
 class ResearchQuestion(Base):
-    """A question saved from the research desk.
+    """A question from the research desk and the status of its run.
 
-    Milestone 1 stores the question and marks it submitted. It does not store
-    sources, claims, or a report, because none of those are produced yet.
+    Sources, claims, checks, contradictions, and the report live in their own
+    tables. This row only records where the run is.
     """
 
     __tablename__ = "research_questions"
@@ -31,6 +34,8 @@ class ResearchQuestion(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=SUBMITTED)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False, default=SUBMITTED)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

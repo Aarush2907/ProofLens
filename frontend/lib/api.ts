@@ -1,4 +1,9 @@
-import type { HealthReport, ResearchQuestion } from "@/types/api";
+import type {
+  HealthReport,
+  ResearchQuestion,
+  ResearchSession,
+  ResearchSource,
+} from "@/types/api";
 
 export class ApiError extends Error {
   status: number;
@@ -93,6 +98,36 @@ export async function fetchResearchQuestions(limit: number): Promise<ResearchQue
   }
   if (!Array.isArray(body) || !body.every(isResearchQuestion)) {
     throw new ApiError("The research list response was not usable.", response.status);
+  }
+  return body;
+}
+
+function isResearchSource(value: unknown): value is ResearchSource {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.url === "string" && typeof record.title === "string";
+}
+
+function isResearchSession(value: unknown): value is ResearchSession {
+  if (!isResearchQuestion(value)) {
+    return false;
+  }
+  const record = value as unknown as Record<string, unknown>;
+  return (
+    Array.isArray(record.sources) &&
+    record.sources.every(isResearchSource) &&
+    Array.isArray(record.claims) &&
+    Array.isArray(record.contradictions)
+  );
+}
+
+export async function fetchResearchSession(id: string): Promise<ResearchSession> {
+  const response = await request(`/api/research/${id}`);
+  const body = await readJson(response);
+  if (!response.ok || !isResearchSession(body)) {
+    throw new ApiError(messageFrom(body, "That research run could not be loaded."), response.status);
   }
   return body;
 }

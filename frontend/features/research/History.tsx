@@ -13,7 +13,7 @@ export function History() {
       <PageHeader
         eyebrow="History"
         title="Questions saved so far."
-        lede="Newest first. Each question stays submitted until a later milestone can research it. There is no score, citation, or agent activity on this page."
+        lede="Newest first. Open a question to read the sources, claims, checks, disagreements, and report that were actually saved."
       />
       <QuestionSection
         loading={loading}
@@ -23,7 +23,7 @@ export function History() {
           void reload();
         }}
         emptyTitle="No history yet"
-        emptyBody="Save a question from the desk. It will be listed here as submitted, and only as submitted."
+        emptyBody="Start a question from the desk. It will be listed here with the status returned by the API."
       >
         <QuestionList questions={questions} />
       </QuestionSection>

@@ -15,3 +15,10 @@ def test_postgres_schema_matches_the_model():
     assert "updated_at TIMESTAMPTZ NOT NULL" in schema
     assert "ck_research_questions_question_not_blank" in schema
     assert "ix_research_questions_created_at" in schema
+    assert "CREATE TABLE IF NOT EXISTS research_sources" in schema
+    assert "CREATE TABLE IF NOT EXISTS research_claims" in schema
+    assert "CREATE TABLE IF NOT EXISTS research_verifications" in schema
+    assert "CREATE TABLE IF NOT EXISTS research_contradictions" in schema
+    assert "CREATE TABLE IF NOT EXISTS research_reports" in schema
+    assert "stage VARCHAR(32)" in schema
+    assert "error_message TEXT" in schema

@@ -14,14 +14,21 @@ def test_creates_and_reads_a_saved_question(client):
     assert created.status_code == 201
     body = created.json()
     assert body["question"] == QUESTION
-    assert body["status"] == "submitted"
+    assert body["status"] == "running"
+    assert body["stage"] == "researching"
     assert "report" not in body
     assert "claims" not in body
     assert "sources" not in body
 
     fetched = client.get(f"/api/research/{body['id']}")
     assert fetched.status_code == 200
-    assert fetched.json()["id"] == body["id"]
+    detail = fetched.json()
+    assert detail["id"] == body["id"]
+    assert detail["status"] == "running"
+    assert detail["sources"] == []
+    assert detail["claims"] == []
+    assert detail["contradictions"] == []
+    assert detail["report"] is None
 
 
 def test_lists_newest_question_first(client):

@@ -20,9 +20,9 @@ export function Sidebar() {
         </Suspense>
       </div>
       <p className="mt-auto px-3 text-xs leading-5 text-muted">
-        Milestone 1
+        Milestone 2
         <br />
-        Questions are saved. Research does not run yet.
+        Five agents research a saved question.
       </p>
     </aside>
   );

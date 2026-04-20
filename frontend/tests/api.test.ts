@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, createResearchQuestion, fetchHealth, fetchResearchQuestions } from "../lib/api";
+import { ApiError, createResearchQuestion, fetchHealth, fetchResearchQuestions, fetchResearchSession } from "../lib/api";
 
 const question = {
   id: "6f1c0a4e-2b4d-4e2a-9c1a-0b1d2e3f4a5b",
@@ -71,5 +71,18 @@ describe("research API client", () => {
     );
 
     await expect(createResearchQuestion("short")).rejects.toThrow(/10 characters/);
+  });
+
+  it("rejects a session body that has no source list", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        status: 200,
+        ok: true,
+        json: async () => question,
+      }),
+    );
+
+    await expect(fetchResearchSession(question.id)).rejects.toThrow(/could not be loaded/);
   });
 });

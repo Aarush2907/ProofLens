@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "ProofLens"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
     environment: str = "development"
     log_level: str = "INFO"
     api_prefix: str = "/api"
@@ -29,6 +29,17 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg://prooflens:prooflens@localhost:5432/prooflens"
     )
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = ""
+    search_provider: str = "tavily"
+    search_api_key: str = ""
+    agent_max_attempts: int = 2
+    max_sources: int = 5
+    max_search_results: int = 5
+    max_claims: int = 8
+    graph_recursion_limit: int = 25
+    source_content_chars: int = 4000
 
     @property
     def cors_origin_list(self) -> list[str]:

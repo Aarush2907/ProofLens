@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { QuestionForm } from "@/features/research/QuestionForm";
 import { QuestionList } from "@/features/research/QuestionList";
@@ -9,6 +10,7 @@ import { useResearchQuestions } from "@/hooks/useResearchQuestions";
 import { createResearchQuestion } from "@/lib/api";
 
 export function Desk() {
+  const router = useRouter();
   const { questions, loading, error, reload } = useResearchQuestions(5);
 
   return (
@@ -16,12 +18,13 @@ export function Desk() {
       <PageHeader
         eyebrow="Research desk"
         title="Ask a question worth checking."
-        lede="Write the question you want checked. ProofLens saves it here. The research agents are not running in this milestone, so this desk will not invent sources, claims, or a report."
+        lede="ProofLens searches for sources, extracts claims, checks them against the retrieved passages, looks for disagreements, and writes a cited report. The page for a run shows only what those steps have saved."
       />
       <QuestionForm
         onSubmit={async (question) => {
-          await createResearchQuestion(question);
+          const saved = await createResearchQuestion(question);
           await reload();
+          router.push(`/research/${saved.id}`);
         }}
       />
       <section className="space-y-4">
@@ -41,7 +44,7 @@ export function Desk() {
             void reload();
           }}
           emptyTitle="Nothing on the desk yet"
-          emptyBody="A saved question will appear here with the time it was saved and a submitted status. It will not grow a report until research can actually run."
+          emptyBody="A question you start will appear here with its real status. Open it to read the sources, claims, and report after they are saved."
         >
           <QuestionList questions={questions} />
         </QuestionSection>

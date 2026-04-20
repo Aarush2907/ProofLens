@@ -2,3 +2,6 @@
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+markers = [
+    "e2e: calls the configured OpenAI and search APIs",
+]

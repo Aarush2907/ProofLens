@@ -30,7 +30,7 @@ export function QuestionForm({
     try {
       await onSubmit(draft.trim());
       setDraft("");
-      setNotice("Question saved. Research has not started.");
+      setNotice("Research started.");
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "The question could not be saved.";
       setError(message);
@@ -79,12 +79,11 @@ export function QuestionForm({
           disabled={saving || liveProblem !== null || trimmedLength === 0}
           className="inline-flex items-center justify-center rounded-full bg-brass px-5 py-2.5 text-sm font-medium text-ink transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {saving ? "Saving…" : "Start research"}
+          {saving ? "Starting…" : "Start research"}
         </button>
       </div>
       <p className="mt-4 text-sm leading-6 text-muted">
-        Starting research saves the question with the status “Submitted”. Sources, claims, and a
-        report are not produced in this milestone.
+        Starting research sends the question to the research workflow. Results show up on the run page only after a step saves them.
       </p>
       {error ? (
         <p className="mt-3 text-sm text-danger" role="alert">
