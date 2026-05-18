@@ -15,6 +15,8 @@ class SearchHit(BaseModel):
     snippet: str = ""
     content: str = ""
     query: str
+    published_on: str = ""
+    author: str = ""
 
 
 class ExtractedClaim(BaseModel):

@@ -1,4 +1,5 @@
 import type {
+  EvidenceGraph,
   HealthReport,
   ResearchQuestion,
   ResearchSession,
@@ -128,6 +129,39 @@ export async function fetchResearchSession(id: string): Promise<ResearchSession>
   const body = await readJson(response);
   if (!response.ok || !isResearchSession(body)) {
     throw new ApiError(messageFrom(body, "That research run could not be loaded."), response.status);
+  }
+  return body;
+}
+
+function isEvidenceGraph(value: unknown): value is EvidenceGraph {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return Array.isArray(record.nodes) && Array.isArray(record.edges);
+}
+
+export async function fetchEvidenceGraph(id: string): Promise<EvidenceGraph> {
+  const response = await request(`/api/research/${id}/graph`);
+  const body = await readJson(response);
+  if (!response.ok || !isEvidenceGraph(body)) {
+    throw new ApiError(messageFrom(body, "The evidence graph could not be loaded."), response.status);
+  }
+  return body;
+}
+
+export async function submitReview(
+  id: string,
+  review: { action: "continue" | "research_more"; decisions: { claim_id: string; decision: "approved" | "rejected" }[]; note: string },
+): Promise<ResearchQuestion> {
+  const response = await request(`/api/research/${id}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(review),
+  });
+  const body = await readJson(response);
+  if (!response.ok || !isResearchQuestion(body)) {
+    throw new ApiError(messageFrom(body, "The review could not be saved."), response.status);
   }
   return body;
 }

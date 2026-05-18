@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Integer, JSON, String, Text, Uuid
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -21,9 +21,13 @@ class SourceRecord(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
+    domain: Mapped[str] = mapped_column(Text, nullable=False, default="")
     snippet: Mapped[str] = mapped_column(Text, nullable=False, default="")
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     search_query: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    author: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    published_on: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ClaimRecord(Base):
@@ -37,9 +41,15 @@ class ClaimRecord(Base):
         nullable=False,
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("research_sources.id"),
+        nullable=True,
+    )
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
 
 
 class VerificationRecord(Base):
@@ -62,6 +72,30 @@ class VerificationRecord(Base):
     explanation: Mapped[str] = mapped_column(Text, nullable=False, default="")
     supporting_excerpt: Mapped[str] = mapped_column(Text, nullable=False, default="")
     opposing_excerpt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class EvidenceRecord(Base):
+    """A passage that was actually used to support or oppose one claim."""
+
+    __tablename__ = "research_evidence"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    research_question_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("research_questions.id"),
+        index=True,
+        nullable=False,
+    )
+    claim_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("research_claims.id"),
+        index=True,
+        nullable=False,
+    )
+    source_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    stance: Mapped[str] = mapped_column(String(32), nullable=False)
+    passage: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class ContradictionRecord(Base):

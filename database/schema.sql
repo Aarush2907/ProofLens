@@ -27,9 +27,13 @@ CREATE TABLE IF NOT EXISTS research_sources (
     position INTEGER NOT NULL,
     url TEXT NOT NULL,
     title TEXT NOT NULL,
+    domain TEXT NOT NULL DEFAULT '',
     snippet TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',
-    search_query TEXT NOT NULL DEFAULT ''
+    search_query TEXT NOT NULL DEFAULT '',
+    author TEXT NOT NULL DEFAULT '',
+    published_on TEXT NOT NULL DEFAULT '',
+    retrieved_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS ix_research_sources_question
@@ -39,9 +43,11 @@ CREATE TABLE IF NOT EXISTS research_claims (
     id UUID PRIMARY KEY,
     research_question_id UUID NOT NULL REFERENCES research_questions (id),
     position INTEGER NOT NULL,
+    source_id UUID REFERENCES research_sources (id),
     source_url TEXT NOT NULL,
     text TEXT NOT NULL,
-    kind VARCHAR(32) NOT NULL
+    kind VARCHAR(32) NOT NULL,
+    review_status VARCHAR(32) NOT NULL DEFAULT 'pending'
 );
 
 CREATE INDEX IF NOT EXISTS ix_research_claims_question
@@ -59,6 +65,22 @@ CREATE TABLE IF NOT EXISTS research_verifications (
 
 CREATE INDEX IF NOT EXISTS ix_research_verifications_question
     ON research_verifications (research_question_id);
+
+CREATE TABLE IF NOT EXISTS research_evidence (
+    id UUID PRIMARY KEY,
+    research_question_id UUID NOT NULL REFERENCES research_questions (id),
+    claim_id UUID NOT NULL REFERENCES research_claims (id),
+    source_id UUID,
+    source_url TEXT NOT NULL,
+    stance VARCHAR(32) NOT NULL,
+    passage TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_research_evidence_question
+    ON research_evidence (research_question_id);
+
+CREATE INDEX IF NOT EXISTS ix_research_evidence_claim
+    ON research_evidence (claim_id);
 
 CREATE TABLE IF NOT EXISTS research_contradictions (
     id UUID PRIMARY KEY,
@@ -81,3 +103,10 @@ CREATE TABLE IF NOT EXISTS research_reports (
     limitations JSON NOT NULL,
     created_at TIMESTAMPTZ NOT NULL
 );
+
+ALTER TABLE research_sources ADD COLUMN IF NOT EXISTS domain TEXT DEFAULT '';
+ALTER TABLE research_sources ADD COLUMN IF NOT EXISTS author TEXT DEFAULT '';
+ALTER TABLE research_sources ADD COLUMN IF NOT EXISTS published_on TEXT DEFAULT '';
+ALTER TABLE research_sources ADD COLUMN IF NOT EXISTS retrieved_at TIMESTAMPTZ;
+ALTER TABLE research_claims ADD COLUMN IF NOT EXISTS source_id UUID;
+ALTER TABLE research_claims ADD COLUMN IF NOT EXISTS review_status VARCHAR(32) DEFAULT 'pending';

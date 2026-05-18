@@ -8,16 +8,20 @@ from app.models.research_question import RUNNING, ResearchQuestion
 from app.models.results import (
     ClaimRecord,
     ContradictionRecord,
+    EvidenceRecord,
     ReportRecord,
     SourceRecord,
     VerificationRecord,
 )
+from app.research.quality import assess_source
 from app.schemas.research import (
     ClaimRead,
     ContradictionRead,
+    EvidenceRead,
     ReportRead,
     ResearchQuestionRead,
     ResearchSessionRead,
+    SourceQualityRead,
     SourceRead,
     VerificationRead,
 )
@@ -62,6 +66,12 @@ def get_research_runner():
     return execute_research
 
 
+def get_review_runner():
+    from app.research.runner import resume_research
+
+    return resume_research
+
+
 def load_research_session(db: Session, question_id: uuid.UUID) -> ResearchSessionRead:
     record = get_research_question(db, question_id)
     sources = list(
@@ -84,6 +94,21 @@ def load_research_session(db: Session, question_id: uuid.UUID) -> ResearchSessio
             select(VerificationRecord).where(VerificationRecord.research_question_id == record.id)
         ).all()
     }
+    evidence_by_claim: dict = {}
+    for item in db.scalars(
+        select(EvidenceRecord)
+        .where(EvidenceRecord.research_question_id == record.id)
+        .order_by(EvidenceRecord.stance, EvidenceRecord.passage)
+    ).all():
+        evidence_by_claim.setdefault(item.claim_id, []).append(
+            EvidenceRead(
+                id=item.id,
+                source_id=item.source_id,
+                source_url=item.source_url,
+                stance=item.stance,
+                passage=item.passage,
+            )
+        )
     claims_by_id = {claim.id: claim for claim in claims}
     contradictions = []
     for item in db.scalars(
@@ -121,21 +146,57 @@ def load_research_session(db: Session, question_id: uuid.UUID) -> ResearchSessio
     summary = ResearchQuestionRead.model_validate(record)
     return ResearchSessionRead(
         **summary.model_dump(),
-        sources=[SourceRead.model_validate(source) for source in sources],
+        sources=[_source_read(source) for source in sources],
         claims=[
             ClaimRead(
                 id=claim.id,
+                source_id=claim.source_id,
                 source_url=claim.source_url,
                 text=claim.text,
                 kind=claim.kind,
+                review_status=claim.review_status,
                 verification=(
                     VerificationRead.model_validate(verifications[claim.id])
                     if claim.id in verifications
                     else None
                 ),
+                evidence=evidence_by_claim.get(claim.id, []),
             )
             for claim in claims
         ],
         contradictions=contradictions,
         report=report,
+    )
+
+
+def claim_ids_for(db: Session, question_id: uuid.UUID) -> set[uuid.UUID]:
+    return set(
+        db.scalars(select(ClaimRecord.id).where(ClaimRecord.research_question_id == question_id)).all()
+    )
+
+
+def _source_read(source: SourceRecord) -> SourceRead:
+    quality = assess_source(
+        {
+            "url": source.url,
+            "domain": source.domain,
+            "title": source.title,
+            "author": source.author,
+            "published_on": source.published_on,
+            "content": source.content,
+            "snippet": source.snippet,
+        }
+    )
+    return SourceRead(
+        id=source.id,
+        url=source.url,
+        title=source.title,
+        domain=source.domain,
+        snippet=source.snippet,
+        content=source.content,
+        search_query=source.search_query,
+        author=source.author,
+        published_on=source.published_on,
+        retrieved_at=source.retrieved_at,
+        quality=SourceQualityRead(**quality),
     )

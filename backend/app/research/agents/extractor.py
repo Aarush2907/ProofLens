@@ -22,8 +22,12 @@ def extract_claims(state: dict, model) -> dict:
     batch = model(ClaimBatch, SYSTEM, user)
     drafts = [claim.model_dump() for claim in batch.claims]
     claims = filter_claims(drafts, state["sources"], get_settings().max_claims)
+    sources_by_url = {source["url"]: source for source in state["sources"]}
     for claim in claims:
         claim["id"] = str(uuid.uuid4())
+        source = sources_by_url.get(claim["source_url"]) or {}
+        claim["source_id"] = source.get("id") or ""
+        claim["review_status"] = "pending"
     return {"claims": claims, "stage": "claims_extracted"}
 
 

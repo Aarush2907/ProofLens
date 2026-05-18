@@ -3,7 +3,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { ClaimList, ContradictionList } from "@/features/research/ClaimList";
+import { EvidenceGraphView } from "@/features/research/EvidenceGraph";
 import { ReportView } from "@/features/research/ReportView";
+import { ReviewPanel } from "@/features/research/ReviewPanel";
 import { SourceList } from "@/features/research/SourceList";
 import { useResearchSession } from "@/hooks/useResearchSession";
 import { formatSavedAt, stageDetail, statusLabel } from "@/lib/format";
@@ -49,32 +51,43 @@ export function SessionView({ id }: { id: string }) {
         {session.status === "running" ? (
           <p className="mt-2 text-sm text-muted">This page reloads when the next saved step arrives.</p>
         ) : null}
-        {session.error_message ? (
+        {session.error_message && session.stage !== "awaiting_review" ? (
           <p className="mt-4 text-sm text-danger" role="alert">
             {session.error_message}
           </p>
         ) : null}
+        <nav className="mt-6 flex flex-wrap gap-4 text-sm text-brass">
+          {session.stage === "awaiting_review" ? <a href="#review">Review</a> : null}
+          <a href="#evidence-graph">Evidence graph</a>
+          <a href="#sources">Sources</a>
+          <a href="#claims">Claims</a>
+          <a href="#report">Report</a>
+        </nav>
       </div>
 
-      <Section title="Sources">
+      <ReviewPanel session={session} onSubmitted={reload} />
+      <Section title="Evidence graph" id="evidence-graph">
+        <EvidenceGraphView sessionId={session.id} refreshKey={`${session.stage}:${session.updated_at}`} />
+      </Section>
+      <Section title="Sources" id="sources">
         <SourceList sources={session.sources} />
       </Section>
-      <Section title="Claims and verification">
+      <Section title="Claims and verification" id="claims">
         <ClaimList claims={session.claims} />
       </Section>
       <Section title="Contradictions">
         <ContradictionList items={session.contradictions} />
       </Section>
-      <Section title="Report">
+      <Section title="Report" id="report">
         <ReportView report={session.report} />
       </Section>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, id, children }: { title: string; id?: string; children: ReactNode }) {
   return (
-    <section className="space-y-4">
+    <section id={id} className="space-y-4">
       <h2 className="font-serif text-2xl text-foreground">{title}</h2>
       {children}
     </section>

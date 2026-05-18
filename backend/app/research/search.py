@@ -23,6 +23,8 @@ def hits_from_tavily(payload: dict, query: str) -> list[SearchHit]:
                 snippet=snippet[:1000],
                 content=snippet,
                 query=query,
+                published_on=((item.get("published_date") or item.get("published_on") or "")).strip()[:40],
+                author=((item.get("author") or "")).strip()[:200],
             )
         )
     return hits

@@ -16,6 +16,13 @@ def write_report(state: dict, model) -> dict:
     report = filter_report(draft.model_dump(), state.get("sources") or [], _annotated(state))
     if not report["summary"]:
         report["summary"] = _fallback_summary(state)
+    rejected = [
+        claim for claim in state.get("claims") or [] if claim.get("review_status") == "rejected"
+    ]
+    if rejected:
+        report["limitations"] = list(report["limitations"]) + [
+            f"{len(rejected)} claim(s) were rejected in review and were left out of the findings."
+        ]
     return {"report": report, "stage": "report_written"}
 
 
@@ -24,7 +31,7 @@ def _annotated(state: dict) -> list[dict]:
     annotated = []
     for verdict in state.get("verifications") or []:
         claim = claims.get(verdict.get("claim_id"))
-        if claim is None:
+        if claim is None or claim.get("review_status") == "rejected":
             continue
         annotated.append({**verdict, "source_url": claim["source_url"]})
     return annotated
@@ -40,6 +47,8 @@ def _packet(state: dict) -> str:
     if not state.get("claims"):
         lines.append("None.")
     for claim in state.get("claims") or []:
+        if claim.get("review_status") == "rejected":
+            continue
         verdict = verdicts.get(claim["id"], {})
         lines.append(
             f"- {claim['text']} | {claim['kind']} | {claim['source_url']} | {verdict.get('status', 'unchecked')}"

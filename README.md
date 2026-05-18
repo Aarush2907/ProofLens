@@ -1,16 +1,20 @@
 # ProofLens
 
-ProofLens researches a question with five agents. You write the question, the API starts a LangGraph workflow, and the desk shows the sources, claims, checks, disagreements, and report that the run actually saved.
+ProofLens researches a question with five agents, then waits for a person to approve or reject the claims before the report is written. The desk shows the sources, evidence passages, verification, and an evidence graph built from the rows that were saved.
 
 ## What works in this milestone
 
 - A FastAPI backend with configuration, logging, and error responses.
 - A health check at `GET /api/health`.
-- A research workflow: search, extract claims, check them against retrieved passages, look for disagreements, and write a cited report.
-- Saving each step of a run in PostgreSQL.
-- A Next.js desk that starts a run and opens the saved result. It does not invent sources or a report.
+- A research workflow: search, extract claims, check them against retrieved passages, and look for disagreements.
+- A human review checkpoint. You approve or reject each claim, or send the researcher back with a note. The report is written after you continue.
+- Source records with the original URL, domain, retrieval time, and publication details when the search result included them.
+- Evidence passages linked to the claim and source they were checked against.
+- An evidence graph at `GET /api/research/{id}/graph`, drawn in the desk from those saved relationships.
+- A source record that explains why a page is labelled primary-style, secondary, or unclear. That label is not a reliability score, and it is separate from whether a claim was verified.
+- LangGraph checkpoints so a waiting review can be resumed. PostgreSQL keeps the checkpoint across an API restart. Tests use an in-memory checkpoint for the life of the test process.
 
-A question starts as `running`. It becomes `completed` when a report is saved, or `failed` when a step stops the run. Older rows may still say `submitted` if they were saved before this workflow existed.
+A question starts as `running`. It stays `running` with stage `awaiting_review` until you continue. It becomes `completed` when a report is saved, or `failed` when a step stops the run.
 
 ## What you need installed
 
@@ -65,7 +69,7 @@ uvicorn main:app --reload
 
 The API listens on http://localhost:8000. Interactive docs are at http://localhost:8000/docs while `ENVIRONMENT` is not `production`.
 
-`POST /api/research` saves the question and starts the workflow in the background. `GET /api/research/{id}` returns the sources, claims, verification, contradictions, and report saved so far.
+`POST /api/research` saves the question and starts the workflow in the background. The run pauses after claims are checked. `POST /api/research/{id}/review` approves or rejects those claims, or asks for another search. `GET /api/research/{id}` returns the sources, claims, evidence, contradictions, and report saved so far. `GET /api/research/{id}/graph` returns the nodes and edges for the evidence graph.
 
 ## Run the frontend
 
@@ -83,7 +87,7 @@ Open http://localhost:3000. The desk calls http://localhost:8000. To point it so
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-Start research from the desk. The run page reloads while the status is `running` and shows only the rows the API has saved.
+Start research from the desk. The run page reloads while the status is `running` and shows only the rows the API has saved. When the stage is `awaiting_review`, approve or reject every claim, then continue. The graph and the claim cards use the same saved passages.
 
 ## Tests
 
@@ -113,7 +117,7 @@ npm test
 ## Layout
 
 ```
-backend/app/research/   LangGraph workflow, the five agents, search, and persistence
+backend/app/research/   LangGraph workflow, the five agents, review checkpoint, search, and persistence
 backend/               FastAPI application, settings, database access, and API tests
 frontend/              Next.js research desk
 database/              PostgreSQL schema
@@ -124,4 +128,4 @@ docs/                  Architecture notes
 
 ## Not in this milestone
 
-Vector retrieval, a human review step, evaluation scores, MCP tools, and deployment packaging come later. They are not stubbed as if they already worked.
+Vector retrieval, evaluation scores, MCP tools, and deployment packaging come later. They are not stubbed as if they already worked. The review step in this milestone is the claim checkpoint before the report, not a scored evaluation.

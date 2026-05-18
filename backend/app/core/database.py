@@ -73,11 +73,38 @@ def _add_missing_question_columns() -> None:
         )
     if "error_message" not in present:
         statements.append("ALTER TABLE research_questions ADD COLUMN error_message TEXT")
+    statements.extend(_missing_result_columns(inspector))
     if not statements:
         return
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
+
+
+def _missing_result_columns(inspector) -> list[str]:
+    """Add source and claim columns introduced with the evidence records."""
+
+    statements = []
+    if "research_sources" in inspector.get_table_names():
+        present = {column["name"] for column in inspector.get_columns("research_sources")}
+        additions = {
+            "domain": "ALTER TABLE research_sources ADD COLUMN domain TEXT DEFAULT ''",
+            "author": "ALTER TABLE research_sources ADD COLUMN author TEXT DEFAULT ''",
+            "published_on": "ALTER TABLE research_sources ADD COLUMN published_on TEXT DEFAULT ''",
+            "retrieved_at": "ALTER TABLE research_sources ADD COLUMN retrieved_at TIMESTAMP",
+        }
+        for name, statement in additions.items():
+            if name not in present:
+                statements.append(statement)
+    if "research_claims" in inspector.get_table_names():
+        present = {column["name"] for column in inspector.get_columns("research_claims")}
+        if "source_id" not in present:
+            statements.append("ALTER TABLE research_claims ADD COLUMN source_id UUID")
+        if "review_status" not in present:
+            statements.append(
+                "ALTER TABLE research_claims ADD COLUMN review_status VARCHAR(32) DEFAULT 'pending'"
+            )
+    return statements
 
 
 def database_is_reachable() -> bool:

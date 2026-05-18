@@ -1,5 +1,6 @@
 import type { Contradiction, ResearchClaim } from "@/types/api";
 
+
 export function ClaimList({ claims }: { claims: ResearchClaim[] }) {
   if (claims.length === 0) {
     return <p className="text-sm text-muted">No claims have been saved for this run.</p>;
@@ -8,10 +9,13 @@ export function ClaimList({ claims }: { claims: ResearchClaim[] }) {
   return (
     <ul className="space-y-3">
       {claims.map((claim) => (
-        <li key={claim.id} className="rounded-2xl border border-line bg-panel px-5 py-4">
+        <li key={claim.id} id={`claim-${claim.id}`} className="rounded-2xl border border-line bg-panel px-5 py-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-line px-2 py-0.5 text-[11px] uppercase tracking-wide text-muted">
               {claim.kind}
+            </span>
+            <span className="rounded-full border border-line px-2 py-0.5 text-[11px] uppercase tracking-wide text-muted">
+              {claim.review_status}
             </span>
             {claim.verification ? (
               <span className="rounded-full border border-brass/40 px-2 py-0.5 text-[11px] uppercase tracking-wide text-brass">
@@ -22,20 +26,14 @@ export function ClaimList({ claims }: { claims: ResearchClaim[] }) {
             )}
           </div>
           <p className="mt-3 font-serif text-lg leading-snug text-foreground">{claim.text}</p>
-          <p className="mt-2 break-all text-xs text-sea">{claim.source_url}</p>
+          <a href={claim.source_url} className="mt-2 block break-all text-xs text-sea hover:text-foreground" target="_blank" rel="noreferrer">
+            {claim.source_url}
+          </a>
           {claim.verification?.explanation ? (
             <p className="mt-3 text-sm leading-6 text-muted">{claim.verification.explanation}</p>
           ) : null}
-          {claim.verification?.supporting_excerpt ? (
-            <blockquote className="mt-3 border-l border-brass/50 pl-3 text-sm leading-6 text-foreground">
-              {claim.verification.supporting_excerpt}
-            </blockquote>
-          ) : null}
-          {claim.verification?.opposing_excerpt ? (
-            <blockquote className="mt-3 border-l border-danger/50 pl-3 text-sm leading-6 text-foreground">
-              {claim.verification.opposing_excerpt}
-            </blockquote>
-          ) : null}
+          <EvidenceGroup title="Supporting evidence" stance="supporting" items={claim.evidence} />
+          <EvidenceGroup title="Opposing evidence" stance="opposing" items={claim.evidence} />
         </li>
       ))}
     </ul>
@@ -60,6 +58,35 @@ export function ContradictionList({ items }: { items: Contradiction[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function EvidenceGroup({
+  title,
+  stance,
+  items,
+}: {
+  title: string;
+  stance: string;
+  items: ResearchClaim["evidence"];
+}) {
+  const matches = items.filter((item) => item.stance === stance);
+  return (
+    <div className="mt-4">
+      <h3 className="text-xs font-medium uppercase tracking-[0.16em] text-brass">{title}</h3>
+      {matches.length === 0 ? (
+        <p className="mt-2 text-sm text-muted">No saved passage.</p>
+      ) : (
+        matches.map((item) => (
+          <blockquote key={item.id} className="mt-2 border-l border-brass/50 pl-3 text-sm leading-6 text-foreground">
+            {item.passage}
+            <a href={item.source_url} className="mt-1 block break-all text-xs text-sea" target="_blank" rel="noreferrer">
+              {item.source_url}
+            </a>
+          </blockquote>
+        ))
+      )}
+    </div>
   );
 }
 

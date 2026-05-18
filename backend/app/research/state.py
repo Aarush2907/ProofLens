@@ -23,6 +23,9 @@ class ResearchState(TypedDict):
     error_retryable: bool
     failed: bool
     stage: str
+    research_note: str
+    research_more: bool
+    review_rounds: int
     trace: Annotated[list[str], operator.add]
 
 
@@ -39,5 +42,8 @@ def initial_state(question: str) -> ResearchState:
         "error_retryable": True,
         "failed": False,
         "stage": "researching",
+        "research_note": "",
+        "research_more": False,
+        "review_rounds": 0,
         "trace": [],
     }

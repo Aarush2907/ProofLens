@@ -2,6 +2,7 @@ from app.models.research_question import ResearchQuestion
 from app.models.results import (
     ClaimRecord,
     ContradictionRecord,
+    EvidenceRecord,
     ReportRecord,
     SourceRecord,
     VerificationRecord,
@@ -10,6 +11,7 @@ from app.models.results import (
 __all__ = [
     "ClaimRecord",
     "ContradictionRecord",
+    "EvidenceRecord",
     "ReportRecord",
     "ResearchQuestion",
     "SourceRecord",

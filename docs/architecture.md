@@ -8,9 +8,12 @@ Browser
   -> POST /api/research
   -> FastAPI saves the question and starts the graph
   -> Researcher searches Tavily and fetches pages
-  -> Extractor, fact-checker, contradiction detector, writer
+  -> Extractor, fact-checker, contradiction detector
+  -> Pause for claim review (LangGraph checkpoint, thread id = question id)
+  -> POST /api/research/{id}/review
+  -> Writer
   -> PostgreSQL
-  -> GET /api/research/{id}  (the desk polls this while the run is going)
+  -> GET /api/research/{id} and GET /api/research/{id}/graph
 ```
 
 The HTTP request returns as soon as the question is saved with status `running`. The graph keeps writing intermediate rows. The desk does not invent a stage that the API has not saved.
@@ -23,9 +26,12 @@ Each agent is a function in its own module under `backend/app/research/agents`. 
 2. **Extractor** reads those passages and returns claims tied to a retrieved URL. Opinions are labelled and kept separate from factual claims.
 3. **Fact-checker** reads each factual claim beside its passage. A verdict of Verified or Partially supported is kept only when a supporting excerpt actually appears in that passage. An opinion is recorded as Insufficient evidence without being treated as a fact.
 4. **Contradiction detector** compares factual claims from different sources. A different publication date, or a different definition, is not stored as a contradiction.
-5. **Writer** drafts a report from the claims, verdicts, and disagreements. A citation that was not retrieved is removed. A finding with no remaining citation is moved into the limitations.
+5. **Review** pauses the graph. The person approves or rejects each claim, or sends the researcher back with a note. A rejected claim stays on the run and is left out of the report. The checkpoint thread id is the question id, so two sessions do not resume each other.
+6. **Writer** drafts a report from the approved claims, verdicts, and disagreements. A citation that was not retrieved is removed. A finding left with no citation moves into the limitations.
 
-If search returns nothing, or no claim survives, the graph goes to the writer with that empty result instead of inventing sources. A missing API key stops the run. A temporary search or model failure is tried once more, then the run is marked failed.
+If search returns nothing, or no claim survives, the graph still reaches review and then the writer with that empty result instead of inventing sources. A missing API key stops the run. A temporary search or model failure is tried once more, then the run is marked failed.
+
+Source quality is computed from the saved domain, author, publication date, and passage. The reasons are shown beside the label. There is no numeric reliability score, and a primary-style label does not mean a claim is verified.
 
 ## Backend
 
@@ -44,7 +50,9 @@ Routes:
 | GET | `/api/health` | Reports whether the process and the database are up |
 | GET | `/api/research` | Lists saved questions, newest first |
 | POST | `/api/research` | Validates a question, saves it, and starts the workflow |
-| GET | `/api/research/{id}` | Reads one run, including sources, claims, checks, disagreements, and the report |
+| GET | `/api/research/{id}` | Reads one run, including sources, claims, evidence, checks, disagreements, and the report |
+| GET | `/api/research/{id}/graph` | Reads the evidence graph built from those rows |
+| POST | `/api/research/{id}/review` | Approves or rejects claims, or asks for another search |
 
 `GET /api/health` returns `200` with `"status": "ok"` when PostgreSQL answers `SELECT 1`. It returns `503` with `"status": "degraded"` when the database does not answer. The process stays up either way, so the desk can show the real state.
 
@@ -56,9 +64,10 @@ Other database failures return `503` and a short message. Validation problems re
 
 Child rows are replaced each time a step saves:
 
-- `research_sources` — title, URL, snippet, retrieved text, and the search query
-- `research_claims` — claim text, kind, and source URL
+- `research_sources` — original URL, domain, title, author, publication date when retrieved, retrieval time, snippet, and page text
+- `research_claims` — claim text, category, source id, source URL, and review status
 - `research_verifications` — status, explanation, and the excerpts used
+- `research_evidence` — one supporting or opposing passage, tied to the claim and the source URL
 - `research_contradictions` — the two claims and why they disagree
 - `research_reports` — summary, findings, uncertainties, and limitations
 
@@ -72,7 +81,7 @@ The Next.js app is a desk, not a chat transcript.
 
 - `/` is the composer and the five most recent questions.
 - `/history` is the longer list. Each question links to its run.
-- `/research/[id]` shows the saved sources, claims, verification, contradictions, and report. It reloads while the status is `running`.
+- `/research/[id]` shows the review form, evidence graph, sources, claims, verification, contradictions, and report. It reloads while the status is `running`. The graph is loaded from `GET /api/research/{id}/graph`.
 - `lib/api.ts` is the only place that calls the backend.
 - The header polls `/api/health` and shows whether the API and the database are actually reachable.
 

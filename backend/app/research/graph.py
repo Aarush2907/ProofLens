@@ -11,17 +11,22 @@ from app.research.agents.writer import write_report
 from app.research.errors import ResearchError
 from app.research.model import parse_model
 from app.research.pages import fetch_page_text
+from app.research.review import review_claims
 from app.research.search import search_web
 from app.research.state import ResearchState
 
 logger = logging.getLogger(__name__)
 
 
-def build_graph(model=None, search=None, fetch_page=None):
+def build_graph(model=None, search=None, fetch_page=None, checkpointer=None, pause_for_review=False):
     """Compile the five-agent graph.
 
     model, search, and fetch_page can be replaced in tests. The defaults call
     the configured OpenAI and search APIs and retrieve source pages.
+
+    pause_for_review inserts a human checkpoint after contradictions are
+    saved. The caller must pass the same checkpointer on resume, and the
+    thread id must be the research question id.
     """
 
     model = model or parse_model
@@ -49,6 +54,7 @@ def build_graph(model=None, search=None, fetch_page=None):
     graph.add_node("fact_checker", _guard("fact_checker", fact_checker))
     graph.add_node("contradiction_detector", _guard("contradiction_detector", contradiction_detector))
     graph.add_node("writer", _guard("writer", writer))
+    graph.add_node("review", review_claims)
     graph.add_node("fail", _fail)
 
     graph.add_edge(START, "researcher")
@@ -81,12 +87,24 @@ def build_graph(model=None, search=None, fetch_page=None):
             "fail": "fail",
         },
     )
+    after_contradictions = "review" if pause_for_review else "writer"
     graph.add_conditional_edges(
         "contradiction_detector",
-        _route("contradiction_detector", lambda _state: "writer"),
+        _route("contradiction_detector", lambda _state: after_contradictions),
         {
             "contradiction_detector": "contradiction_detector",
             "writer": "writer",
+            "review": "review",
+            "fail": "fail",
+        },
+    )
+    graph.add_conditional_edges(
+        "review",
+        _route("review", _after_review),
+        {
+            "review": "review",
+            "writer": "writer",
+            "researcher": "researcher",
             "fail": "fail",
         },
     )
@@ -96,7 +114,7 @@ def build_graph(model=None, search=None, fetch_page=None):
         {"writer": "writer", "end": END, "fail": "fail"},
     )
     graph.add_edge("fail", END)
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
 def _guard(name: str, agent):
@@ -154,4 +172,10 @@ def _after_researcher(state: ResearchState) -> str:
 def _after_extractor(state: ResearchState) -> str:
     if state.get("claims"):
         return "fact_checker"
+    return "writer"
+
+
+def _after_review(state: ResearchState) -> str:
+    if state.get("research_more"):
+        return "researcher"
     return "writer"

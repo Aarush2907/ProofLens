@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.core.database import Base, engine
 from app.main import app
-from app.services.research import get_research_runner
+from app.services.research import get_research_runner, get_review_runner
 
 
 @pytest.fixture(autouse=True)
@@ -18,8 +18,10 @@ def disable_live_research():
     # The API schedules a run after saving a question. Tests replace that run
     # so they do not call OpenAI or the search API.
     app.dependency_overrides[get_research_runner] = lambda: (lambda _question_id: None)
+    app.dependency_overrides[get_review_runner] = lambda: (lambda _question_id, _decision: None)
     yield
     app.dependency_overrides.pop(get_research_runner, None)
+    app.dependency_overrides.pop(get_review_runner, None)
 
 
 @pytest.fixture

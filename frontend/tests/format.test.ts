@@ -19,6 +19,7 @@ describe("research presentation", () => {
     expect(stageDetail("sources_collected", "running")).toMatch(/extractor has not finished/);
     expect(stageDetail("completed", "completed")).toMatch(/report was saved/);
     expect(stageDetail("mystery", "running")).toBe("Research is in progress.");
+    expect(stageDetail("awaiting_review", "running")).toMatch(/report is not written/);
   });
   it("returns the original text when the timestamp cannot be parsed", () => {
     expect(formatSavedAt("not-a-date")).toBe("not-a-date");

@@ -17,12 +17,28 @@ export type ResearchQuestion = {
   updated_at: string;
 };
 
+export type SourceQuality = {
+  role: string;
+  publisher: string;
+  author_known: boolean;
+  date_known: boolean;
+  specific: boolean;
+  reports_original_data: boolean;
+  reasons: string[];
+};
+
 export type ResearchSource = {
+  id: string;
   url: string;
   title: string;
+  domain: string;
   snippet: string;
   content: string;
   search_query: string;
+  author: string;
+  published_on: string;
+  retrieved_at: string | null;
+  quality: SourceQuality;
 };
 
 export type Verification = {
@@ -32,12 +48,23 @@ export type Verification = {
   opposing_excerpt: string;
 };
 
+export type EvidencePassage = {
+  id: string;
+  source_id: string | null;
+  source_url: string;
+  stance: string;
+  passage: string;
+};
+
 export type ResearchClaim = {
   id: string;
+  source_id: string | null;
   source_url: string;
   text: string;
   kind: string;
+  review_status: string;
   verification: Verification | null;
+  evidence: EvidencePassage[];
 };
 
 export type Contradiction = {
@@ -67,6 +94,29 @@ export type ResearchSession = ResearchQuestion & {
   claims: ResearchClaim[];
   contradictions: Contradiction[];
   report: ResearchReport | null;
+};
+
+export type GraphNode = {
+  id: string;
+  kind: string;
+  label: string;
+  url: string;
+  status: string;
+  stance: string;
+  passage: string;
+  review_status: string;
+  explanation: string;
+};
+
+export type GraphEdge = {
+  source: string;
+  target: string;
+  relation: string;
+};
+
+export type EvidenceGraph = {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 };
 
 export type ApiErrorBody = {

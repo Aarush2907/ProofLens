@@ -35,6 +35,8 @@ export function stageDetail(stage: string, status: string): string {
     claims_extracted: "Claims are saved. The fact-checker has not finished.",
     claims_checked: "Verification is saved. The contradiction check has not finished.",
     contradictions_checked: "Contradictions are saved. The writer has not finished.",
+    awaiting_review: "Claims are ready for review. The report is not written until you continue.",
+    claims_reviewed: "The review was saved. The writer has not finished.",
     report_written: "The writer has finished. The run is being saved.",
   };
   return copy[stage] ?? "Research is in progress.";

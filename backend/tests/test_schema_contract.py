@@ -20,5 +20,8 @@ def test_postgres_schema_matches_the_model():
     assert "CREATE TABLE IF NOT EXISTS research_verifications" in schema
     assert "CREATE TABLE IF NOT EXISTS research_contradictions" in schema
     assert "CREATE TABLE IF NOT EXISTS research_reports" in schema
+    assert "CREATE TABLE IF NOT EXISTS research_evidence" in schema
+    assert "review_status VARCHAR(32)" in schema
+    assert "published_on TEXT" in schema
     assert "stage VARCHAR(32)" in schema
     assert "error_message TEXT" in schema

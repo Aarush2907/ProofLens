@@ -116,6 +116,8 @@ def test_tavily_payload_keeps_title_url_and_snippet():
     assert hits[0].url == "https://example.edu/sleep"
     assert hits[0].snippet == PASSAGE
     assert hits[0].query == "sleep and memory"
+    assert hits[0].published_on == ""
+    assert hits[0].author == ""
 
 
 def test_html_text_skips_scripts():
