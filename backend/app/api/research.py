@@ -1,10 +1,14 @@
+import asyncio
+import json
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.errors import AppError
+from app.research.activity import activity_log
 from app.models.research_question import ResearchQuestion
 from app.schemas.research import (
     EvidenceGraphRead,
@@ -89,3 +93,64 @@ def review_question(
             )
     background.add_task(resume, record.id, payload.model_dump(mode="json"))
     return record
+
+
+@router.get("/{question_id}/events")
+async def stream_activity(question_id: uuid.UUID, request: Request) -> StreamingResponse:
+    exists = await asyncio.to_thread(_question_exists, question_id)
+    if not exists:
+        raise AppError(
+            "No research question exists with that id.",
+            status_code=404,
+            code="not_found",
+        )
+    cursor = _event_cursor(request.headers.get("last-event-id"))
+    return StreamingResponse(
+        _activity_stream(str(question_id), cursor, request),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _question_exists(question_id: uuid.UUID) -> bool:
+    db = SessionLocal()
+    try:
+        return db.get(ResearchQuestion, question_id) is not None
+    finally:
+        db.close()
+
+
+def _event_cursor(header: str | None) -> int:
+    if not header:
+        return 0
+    try:
+        return max(int(header), 0)
+    except ValueError:
+        return 0
+
+
+async def _activity_stream(session_id: str, cursor: int, request: Request):
+    quiet = 0
+    while True:
+        if await request.is_disconnected():
+            return
+        batch = activity_log.since(session_id, cursor)
+        if batch:
+            quiet = 0
+            for event in batch:
+                cursor = event["id"]
+                yield _sse(event)
+            if batch[-1]["terminal"]:
+                return
+        else:
+            quiet += 1
+            if quiet % 15 == 0:
+                yield ": keepalive\n\n"
+            if quiet >= 900:
+                return
+        await asyncio.sleep(0.4)
+
+
+def _sse(event: dict) -> str:
+    payload = json.dumps(event)
+    return f"id: {event['id']}\ndata: {payload}\n\n"

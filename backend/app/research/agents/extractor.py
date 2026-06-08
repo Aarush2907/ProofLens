@@ -1,6 +1,7 @@
 import uuid
 
 from app.core.config import get_settings
+from app.research.activity import emit
 from app.research.checks import filter_claims
 from app.research.contracts import ClaimBatch
 
@@ -14,13 +15,23 @@ SYSTEM = (
 )
 
 
-def extract_claims(state: dict, model) -> dict:
+def extract_claims(state: dict, model, drafts: list[dict] | None = None) -> dict:
+    session_id = state.get("session_id") or ""
+    emit("extractor_started", "Extractor started.", agent="extractor", session_id=session_id)
     if not state.get("sources"):
+        emit(
+            "claims_extracted",
+            "No claims were extracted.",
+            agent="extractor",
+            detail={"count": 0},
+            session_id=session_id,
+        )
         return {"claims": [], "stage": "claims_extracted"}
 
-    user = _source_packet(state["sources"])
-    batch = model(ClaimBatch, SYSTEM, user)
-    drafts = [claim.model_dump() for claim in batch.claims]
+    if drafts is None:
+        user = _source_packet(state["sources"])
+        batch = model(ClaimBatch, SYSTEM, user)
+        drafts = [claim.model_dump() for claim in batch.claims]
     claims = filter_claims(drafts, state["sources"], get_settings().max_claims)
     sources_by_url = {source["url"]: source for source in state["sources"]}
     for claim in claims:
@@ -28,6 +39,13 @@ def extract_claims(state: dict, model) -> dict:
         source = sources_by_url.get(claim["source_url"]) or {}
         claim["source_id"] = source.get("id") or ""
         claim["review_status"] = "pending"
+    emit(
+        "claims_extracted",
+        f"Extracted {len(claims)} claims.",
+        agent="extractor",
+        detail={"count": len(claims)},
+        session_id=session_id,
+    )
     return {"claims": claims, "stage": "claims_extracted"}
 
 

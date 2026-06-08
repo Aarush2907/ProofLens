@@ -18,11 +18,12 @@ from app.research.state import ResearchState
 logger = logging.getLogger(__name__)
 
 
-def build_graph(model=None, search=None, fetch_page=None, checkpointer=None, pause_for_review=False):
+def build_graph(model=None, search=None, fetch_page=None, checkpointer=None, pause_for_review=False, executor=None):
     """Compile the five-agent graph.
 
-    model, search, and fetch_page can be replaced in tests. The defaults call
-    the configured OpenAI and search APIs and retrieve source pages.
+    model, search, and fetch_page can be replaced in tests. When they are
+    omitted, the graph calls the MCP server for search, page retrieval,
+    claim extraction, claim checks, and evidence search.
 
     pause_for_review inserts a human checkpoint after contradictions are
     saved. The caller must pass the same checkpointer on resume, and the
@@ -30,6 +31,13 @@ def build_graph(model=None, search=None, fetch_page=None, checkpointer=None, pau
     """
 
     model = model or parse_model
+    if search is None and fetch_page is None and executor is None:
+        from app.mcp.client import get_executor
+
+        executor = get_executor()
+    if executor is not None:
+        search = search or executor.search
+        fetch_page = fetch_page or executor.fetch
     search = search or search_web
     fetch_page = fetch_page or fetch_page_text
 
@@ -37,10 +45,15 @@ def build_graph(model=None, search=None, fetch_page=None, checkpointer=None, pau
         return collect_sources(state, model, search, fetch_page)
 
     def extractor(state: ResearchState) -> dict:
-        return extract_claims(state, model)
+        drafts = None
+        if executor is not None and state.get("sources"):
+            drafts = executor.extract(state.get("sources") or [])
+        return extract_claims(state, model, drafts=drafts)
 
     def fact_checker(state: ResearchState) -> dict:
-        return check_claims(state, model)
+        retrieve = executor.evidence if executor is not None else None
+        verify = executor.verify if executor is not None else None
+        return check_claims(state, model, retrieve_evidence=retrieve, verify=verify)
 
     def contradiction_detector(state: ResearchState) -> dict:
         return find_contradictions(state, model)

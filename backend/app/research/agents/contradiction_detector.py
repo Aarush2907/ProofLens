@@ -1,3 +1,4 @@
+from app.research.activity import emit
 from app.research.checks import filter_contradictions
 from app.research.contracts import DisagreementBatch
 
@@ -13,6 +14,13 @@ SYSTEM = (
 
 
 def find_contradictions(state: dict, model) -> dict:
+    session_id = state.get("session_id") or ""
+    emit(
+        "contradiction_detector_started",
+        "Contradiction detector started.",
+        agent="contradiction_detector",
+        session_id=session_id,
+    )
     comparable = [
         claim
         for claim in state.get("claims") or []
@@ -27,7 +35,13 @@ def find_contradictions(state: dict, model) -> dict:
         lines.append(f"{claim['id']} | {claim['source_url']} | {claim['text']}")
     batch = model(DisagreementBatch, SYSTEM, "\n".join(lines))
     disagreements = [item.model_dump() for item in batch.disagreements]
-    return {
-        "contradictions": filter_contradictions(disagreements, state["claims"]),
-        "stage": "contradictions_checked",
-    }
+    contradictions = filter_contradictions(disagreements, state["claims"])
+    for item in contradictions:
+        emit(
+            "contradiction_detected",
+            item["explanation"],
+            agent="contradiction_detector",
+            detail={"claim_id": item["claim_id"], "other_claim_id": item["other_claim_id"]},
+            session_id=session_id,
+        )
+    return {"contradictions": contradictions, "stage": "contradictions_checked"}

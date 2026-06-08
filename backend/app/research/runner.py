@@ -5,6 +5,7 @@ from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
 
 from app.core.config import get_settings
+from app.research.activity import bind_session, emit, reset_session
 from app.research.checkpointer import get_checkpointer
 from app.research.graph import build_graph
 from app.research.persist import save_progress
@@ -33,7 +34,12 @@ def execute_research(question_id: uuid.UUID) -> None:
         db.close()
 
     graph = build_graph(checkpointer=get_checkpointer(), pause_for_review=True)
-    run_until_pause(graph, question_id, question)
+    token = bind_session(str(question_id))
+    try:
+        emit("research_started", "Research started.", agent="workflow", session_id=str(question_id))
+        run_until_pause(graph, question_id, question)
+    finally:
+        reset_session(token)
 
 
 def resume_research(question_id: uuid.UUID, decision: dict) -> None:
@@ -55,7 +61,11 @@ def resume_research(question_id: uuid.UUID, decision: dict) -> None:
         db.close()
 
     graph = build_graph(checkpointer=get_checkpointer(), pause_for_review=True)
-    run_until_pause(graph, question_id, question, resume=decision)
+    token = bind_session(str(question_id))
+    try:
+        run_until_pause(graph, question_id, question, resume=decision)
+    finally:
+        reset_session(token)
 
 
 def run_until_pause(graph, question_id: uuid.UUID, question: str, resume: dict | None = None) -> dict:
@@ -70,7 +80,7 @@ def run_until_pause(graph, question_id: uuid.UUID, question: str, resume: dict |
             "A PostgreSQL checkpoint survives an API restart. An in-memory checkpoint does not.",
         )
         return initial_state(question)
-    incoming = Command(resume=resume) if resume is not None else initial_state(question)
+    incoming = Command(resume=resume) if resume is not None else initial_state(question, session_id=str(question_id))
     state = initial_state(question)
     paused = False
     try:
@@ -90,6 +100,14 @@ def run_until_pause(graph, question_id: uuid.UUID, question: str, resume: dict |
 
     save_progress(question_id, state, finished=True)
     _mark_failed(question_id, state)
+    if state.get("failed"):
+        emit(
+            "research_failed",
+            state.get("last_error") or "Research stopped because a step failed.",
+            agent="workflow",
+            terminal=True,
+            session_id=str(question_id),
+        )
     return state
 
 

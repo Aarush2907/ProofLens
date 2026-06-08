@@ -18,6 +18,7 @@ venv/
 htmlcov/
 *.sqlite
 *.db
+.qdrant/
 
 # Node / Next.js
 node_modules/

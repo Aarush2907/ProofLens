@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { ActivityPanel } from "@/features/research/ActivityPanel";
 import { ClaimList, ContradictionList } from "@/features/research/ClaimList";
 import { EvidenceGraphView } from "@/features/research/EvidenceGraph";
 import { ReportView } from "@/features/research/ReportView";
@@ -57,6 +58,7 @@ export function SessionView({ id }: { id: string }) {
           </p>
         ) : null}
         <nav className="mt-6 flex flex-wrap gap-4 text-sm text-brass">
+          <a href="#activity">Activity</a>
           {session.stage === "awaiting_review" ? <a href="#review">Review</a> : null}
           <a href="#evidence-graph">Evidence graph</a>
           <a href="#sources">Sources</a>
@@ -65,6 +67,7 @@ export function SessionView({ id }: { id: string }) {
         </nav>
       </div>
 
+      <ActivityPanel sessionId={session.id} />
       <ReviewPanel session={session} onSubmitted={reload} />
       <Section title="Evidence graph" id="evidence-graph">
         <EvidenceGraphView sessionId={session.id} refreshKey={`${session.stage}:${session.updated_at}`} />

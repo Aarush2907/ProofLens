@@ -1,3 +1,4 @@
+from app.research.activity import emit
 from app.research.checks import filter_report
 from app.research.contracts import ReportDraft
 
@@ -12,6 +13,8 @@ SYSTEM = (
 
 
 def write_report(state: dict, model) -> dict:
+    session_id = state.get("session_id") or ""
+    emit("writer_started", "Writer started.", agent="writer", session_id=session_id)
     draft = model(ReportDraft, SYSTEM, _packet(state))
     report = filter_report(draft.model_dump(), state.get("sources") or [], _annotated(state))
     if not report["summary"]:
@@ -23,6 +26,7 @@ def write_report(state: dict, model) -> dict:
         report["limitations"] = list(report["limitations"]) + [
             f"{len(rejected)} claim(s) were rejected in review and were left out of the findings."
         ]
+    emit("report_completed", "Report completed.", agent="writer", session_id=session_id, terminal=True)
     return {"report": report, "stage": "report_written"}
 
 

@@ -9,3 +9,6 @@ langgraph>=0.2
 langgraph-checkpoint-sqlite>=2.0
 langgraph-checkpoint-postgres>=2.0
 openai>=1.50
+mcp>=1.9
+qdrant-client>=1.12
+fastembed>=0.4

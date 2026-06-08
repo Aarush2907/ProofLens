@@ -18,8 +18,8 @@ def evidence_for(claims: list[dict], verifications: list[dict]) -> list[dict]:
             rows.append(
                 {
                     "claim_id": claim["id"],
-                    "source_id": claim.get("source_id") or "",
-                    "source_url": claim["source_url"],
+                    "source_id": verdict.get(f"{stance}_source_id") or claim.get("source_id") or "",
+                    "source_url": verdict.get(f"{stance}_url") or claim["source_url"],
                     "stance": stance,
                     "passage": passage,
                 }

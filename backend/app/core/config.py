@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "ProofLens"
-    app_version: str = "0.3.0"
+    app_version: str = "0.4.0"
     environment: str = "development"
     log_level: str = "INFO"
     api_prefix: str = "/api"
@@ -40,6 +40,19 @@ class Settings(BaseSettings):
     max_claims: int = 8
     graph_recursion_limit: int = 25
     source_content_chars: int = 4000
+    # Embedding settings are separate from the chat model. A live run uses
+    # fastembed. Tests set EMBEDDING_PROVIDER=hash so they do not download a model.
+    embedding_provider: str = "fastembed"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    qdrant_url: str = ""
+    qdrant_path: str = ""
+    qdrant_collection: str = "prooflens_evidence"
+    mcp_tool_timeout_seconds: float = 45
+    memory_fresh_days: int = 14
+    retrieval_min_score: float = 0.2
+    memory_min_score: float = 0.35
+    chunk_size: int = 700
+    chunk_overlap: int = 80
 
     @property
     def cors_origin_list(self) -> list[str]:

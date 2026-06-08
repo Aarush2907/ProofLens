@@ -26,10 +26,11 @@ class ResearchState(TypedDict):
     research_note: str
     research_more: bool
     review_rounds: int
+    session_id: str
     trace: Annotated[list[str], operator.add]
 
 
-def initial_state(question: str) -> ResearchState:
+def initial_state(question: str, session_id: str = "") -> ResearchState:
     return {
         "question": question,
         "sources": [],
@@ -45,5 +46,6 @@ def initial_state(question: str) -> ResearchState:
         "research_note": "",
         "research_more": False,
         "review_rounds": 0,
+        "session_id": session_id,
         "trace": [],
     }

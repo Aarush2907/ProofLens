@@ -7,16 +7,18 @@ Browser
   -> Next.js desk
   -> POST /api/research
   -> FastAPI saves the question and starts the graph
-  -> Researcher searches Tavily and fetches pages
+  -> MCP server (stdio) runs search, page retrieval, extraction, checks, and evidence search
+  -> Qdrant stores source passages for this session and for later retrieval
   -> Extractor, fact-checker, contradiction detector
   -> Pause for claim review (LangGraph checkpoint, thread id = question id)
+  -> GET /api/research/{id}/events streams the steps that actually ran
   -> POST /api/research/{id}/review
   -> Writer
   -> PostgreSQL
   -> GET /api/research/{id} and GET /api/research/{id}/graph
 ```
 
-The HTTP request returns as soon as the question is saved with status `running`. The graph keeps writing intermediate rows. The desk does not invent a stage that the API has not saved.
+The HTTP request returns as soon as the question is saved with status `running`. The graph keeps writing intermediate rows. The desk does not invent a stage that the API has not saved. Activity events are appended by the agent that is running, and the desk reads them from the event stream.
 
 ## The five agents
 
@@ -24,7 +26,7 @@ Each agent is a function in its own module under `backend/app/research/agents`. 
 
 1. **Researcher** plans one or two search queries, calls the search API, drops duplicate URLs, and fetches page text when a page answers.
 2. **Extractor** reads those passages and returns claims tied to a retrieved URL. Opinions are labelled and kept separate from factual claims.
-3. **Fact-checker** reads each factual claim beside its passage. A verdict of Verified or Partially supported is kept only when a supporting excerpt actually appears in that passage. An opinion is recorded as Insufficient evidence without being treated as a fact.
+3. **Fact-checker** reads each factual claim beside its passage and any similar stored passage. A verdict of Verified or Partially supported is kept only when a supporting excerpt actually appears in that text. An opinion is recorded as Insufficient evidence without being treated as a fact. A passage from an earlier session is used only when it is similar enough, and an old passage is described as possibly outdated.
 4. **Contradiction detector** compares factual claims from different sources. A different publication date, or a different definition, is not stored as a contradiction.
 5. **Review** pauses the graph. The person approves or rejects each claim, or sends the researcher back with a note. A rejected claim stays on the run and is left out of the report. The checkpoint thread id is the question id, so two sessions do not resume each other.
 6. **Writer** drafts a report from the approved claims, verdicts, and disagreements. A citation that was not retrieved is removed. A finding left with no citation moves into the limitations.
@@ -53,6 +55,7 @@ Routes:
 | GET | `/api/research/{id}` | Reads one run, including sources, claims, evidence, checks, disagreements, and the report |
 | GET | `/api/research/{id}/graph` | Reads the evidence graph built from those rows |
 | POST | `/api/research/{id}/review` | Approves or rejects claims, or asks for another search |
+| GET | `/api/research/{id}/events` | Streams agent activity for that run as server-sent events |
 
 `GET /api/health` returns `200` with `"status": "ok"` when PostgreSQL answers `SELECT 1`. It returns `503` with `"status": "degraded"` when the database does not answer. The process stays up either way, so the desk can show the real state.
 
@@ -81,12 +84,18 @@ The Next.js app is a desk, not a chat transcript.
 
 - `/` is the composer and the five most recent questions.
 - `/history` is the longer list. Each question links to its run.
-- `/research/[id]` shows the review form, evidence graph, sources, claims, verification, contradictions, and report. It reloads while the status is `running`. The graph is loaded from `GET /api/research/{id}/graph`.
+- `/research/[id]` shows live agent activity, the review form, evidence graph, sources, claims, verification, contradictions, and report. It reloads while the status is `running`. The graph is loaded from `GET /api/research/{id}/graph`. Activity comes from the event stream, which reconnects with `Last-Event-ID`.
 - `lib/api.ts` is the only place that calls the backend.
 - The header polls `/api/health` and shows whether the API and the database are actually reachable.
 
-Empty lists stay empty. The page does not draw an agent checklist or sample findings.
+Empty lists stay empty. The activity list only shows events the backend recorded.
+
+## MCP, retrieval, and activity
+
+The API starts `python -m app.mcp.server` and talks to it over stdio. The five tools are `search_web`, `retrieve_source`, `extract_claims`, `verify_claim`, and `search_evidence`. Tests can also connect to the same server object in memory. That path still uses the MCP client and server. It is not a direct function call from the test into the agent.
+
+Qdrant stores one passage per chunk, with the source id, URL, title, and research session id. The default embedding model is `BAAI/bge-small-en-v1.5` through fastembed, configured separately from `OPENAI_MODEL`. Tests set `EMBEDDING_PROVIDER=hash` and `QDRANT_PATH=:memory:` so they do not download a model or need a Qdrant service. A fresh stored copy of a URL is reused. A copy older than `MEMORY_FRESH_DAYS` is fetched again, or marked possibly outdated when the fetch fails.
 
 ## Deliberately not here
 
-Vector retrieval, a human review pause, evaluation scores, MCP tools, and deployment packaging belong to later milestones. They are not stubbed as if they already worked.
+Evaluation scores and deployment packaging belong to a later milestone. They are not stubbed as if they already worked.

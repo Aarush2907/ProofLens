@@ -1,11 +1,20 @@
 from langgraph.types import interrupt
 
+from app.research.activity import emit
+
 # A reviewer can send the researcher back twice. After that the run stops
 # instead of looping on the same question.
 MAX_EXTRA_ROUNDS = 2
 
 
 def review_claims(state: dict) -> dict:
+    emit(
+        "approval_required",
+        "Approval required before the report is written.",
+        agent="review",
+        detail={"claim_count": len(state.get("claims") or [])},
+        session_id=state.get("session_id") or "",
+    )
     decision = interrupt(
         {
             "question": state.get("question") or "",

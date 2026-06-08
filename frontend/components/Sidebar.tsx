@@ -20,9 +20,9 @@ export function Sidebar() {
         </Suspense>
       </div>
       <p className="mt-auto px-3 text-xs leading-5 text-muted">
-        Milestone 3
+        Milestone 4
         <br />
-        Review claims before the report is written.
+        MCP tools, stored evidence, and live agent activity.
       </p>
     </aside>
   );

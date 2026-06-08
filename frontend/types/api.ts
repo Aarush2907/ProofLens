@@ -1,3 +1,14 @@
+export type ActivityEvent = {
+  id: number;
+  session_id: string;
+  kind: string;
+  agent: string;
+  message: string;
+  detail: Record<string, unknown>;
+  at: string;
+  terminal: boolean;
+};
+
 export type HealthReport = {
   status: "ok" | "degraded";
   service: string;

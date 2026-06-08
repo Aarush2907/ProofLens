@@ -4,6 +4,8 @@ import os
 # so a developer's PostgreSQL URL in .env does not leak into these tests.
 os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
 os.environ["ENVIRONMENT"] = "test"
+os.environ["EMBEDDING_PROVIDER"] = "hash"
+os.environ["QDRANT_PATH"] = ":memory:"
 
 import pytest
 from fastapi.testclient import TestClient
