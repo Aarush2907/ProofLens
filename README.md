@@ -162,9 +162,9 @@ From the repository root, with Docker installed:
 docker compose up --build
 ```
 
-Compose starts PostgreSQL 16, Qdrant, the API, and the desk. Health checks gate the API on Postgres and Qdrant, and the desk on the API. The API image runs as a normal user, and Qdrant is pinned to a release the client library accepts. Volumes keep the database, Qdrant storage, and the embedding cache. The desk is built with `NEXT_PUBLIC_API_URL=http://localhost:8000`, which is the URL the browser uses. Pass `OPENAI_API_KEY` and `SEARCH_API_KEY` in the shell if you want a live run. They are not copied into the image. `.env`, `explanation.txt`, virtual environments, and local databases are in `.dockerignore`.
+Compose starts PostgreSQL 16, Qdrant, the API, and the desk. Health checks gate the API on Postgres and Qdrant, and the desk on the API. The API image runs as a normal user, and Qdrant is pinned to a release the client library accepts. Volumes keep the database, Qdrant storage, and the embedding cache. The desk is built with `NEXT_PUBLIC_API_URL=http://localhost:8000`, which is the URL the browser uses. Compose sets `REQUIRE_USER_KEYS=true`, so enter your own OpenAI and Tavily keys under "API keys" on the desk before you start a run. To use server-side keys on a private install instead, set `REQUIRE_USER_KEYS=false` and pass `OPENAI_API_KEY` and `SEARCH_API_KEY` in the shell. Keys are never copied into the image. `.env`, `explanation.txt`, virtual environments, and local databases are in `.dockerignore`.
 
-This Compose file is the local packaging. It was built and started once with Docker Desktop on Windows: all four services reached healthy, `/api/health` reported PostgreSQL and Qdrant connected, the API ran as a non-root user, and a run with placeholder keys was saved and failed cleanly with a key-rejected message. A run with real OpenAI and Tavily keys and a hosted deployment have not been done. See `docs/deployment.md`.
+This Compose file is the local packaging. It was built and started once with Docker Desktop on Windows: all four services reached healthy, `/api/health` reported PostgreSQL and Qdrant connected, the API ran as a non-root user, and a run with placeholder keys was saved and failed cleanly with a key-rejected message, and a run with real OpenAI and Tavily keys completed (see Results from a real run). A hosted deployment has not been done. See `docs/deployment.md`.
 
 ## API
 
@@ -184,7 +184,11 @@ A question is `running` while the graph works and while it waits at `awaiting_re
 
 ## Screenshots
 
-No screenshots are stored in this repository. The desk is the Next.js app at `/`, `/history`, and `/research/[id]`.
+The desk is the Next.js app at `/`, `/history`, and `/research/[id]`. These two screenshots are of the real run described below, taken from the Compose stack.
+
+![Report summary, verdict counts and download buttons](docs/screenshots/report-top.png)
+
+![Uncertainty, limitations and the first verified claim with its quotation](docs/screenshots/claims.png)
 
 ## Evaluation
 
@@ -206,10 +210,37 @@ The deterministic metrics are:
 - **Source freshness.** The product's freshness rule matches the label for that timestamp.
 - **Statistic backing.** For a Verified or Partially supported statistic, every number in the claim appears in the excerpt.
 
-Ragas faithfulness, answer relevancy, and context precision are requested only when `OPENAI_API_KEY` is set. If the key is missing, or the library cannot be imported, the result is `ran: false` and no score is filled in. Install `pip install -r requirements-eval.txt` to get it. Ragas 0.2.15 is pinned because later releases need scikit-network, which needed a C++ compiler to build during development. Current LangChain no longer ships a class that release imports, so `app.evaluation.ragas_eval` installs a placeholder for that import and does not call it.
+Ragas faithfulness, answer relevancy, and context precision are requested only when `OPENAI_API_KEY` is set. If the key is missing, or the library cannot be imported, the result is `ran: false` and no score is filled in. To get it, run `pip install -r requirements-eval.txt`. Ragas 0.2.15 is pinned because later releases need scikit-network, which needed a C++ compiler to build during development. Current LangChain no longer ships a class that release imports, so `app.evaluation.ragas_eval` installs a placeholder for that import and does not call it.
 
 These scores measure the curated rows and the quotation rules. A high score does not guarantee factual correctness. Citation support stays high when a false claim quotes a true sentence. The product now also refuses to keep a statistic as Verified when its quotation lacks the claim's numbers, so the incorrect-claim and unsupported-statistic rows end as Insufficient evidence. The statistic-backing metric still reports the raw verdict, so it scores those rows 0. The remaining gap is the misleading-excerpt row: the quoted sentence names the figure in order to deny it, so number matching passes and claim verification scores 0. Only the deterministic metrics have produced numbers. No Ragas score has been obtained.
 
+## Results from a real run
+
+One question was run on 23 Nov 2026 through the Compose stack, with the visitor's own OpenAI and Tavily keys entered in the desk and a person approving the claims. The saved exports are in `docs/sample-run/` ([report.md](docs/sample-run/report.md) and [report.pdf](docs/sample-run/report.pdf)).
+
+Question: "Does applying job in the morning is better than applying in the night" (typed as written).
+
+| Measure | Result |
+| --- | --- |
+| Status | Completed |
+| Sources saved | 5 |
+| Claims extracted | 7 (all 7 approved in review) |
+| Verdicts | 4 Verified, 3 Insufficient evidence, 0 Partially supported, 0 Contradicted |
+| Contradictions found | 0 |
+| Report findings | 5 (4 supported, 1 partly supported) |
+| Model use | 9,362 prompt and 1,731 completion tokens, about $0.0024 at the configured prices (an estimate, not an invoice) |
+
+The saved time from start to finish was almost ten minutes. That includes the time spent waiting for the review decision, and the stage timings were not saved, so this is not a measure of processing speed.
+
+What the run showed:
+
+- The stack works end to end on real services: search, page text, claim extraction, verification, the review pause, the report, the evidence graph, and both exports.
+- A Verified label means the saved text states the claim. All five sources were career-advice or recruiting pages (four classed secondary, one with incomplete primary-source signals), so the verified figures such as "13% interview conversion" are statistics those pages repeat. The run did not show that the figures are true.
+- For four of the five sources the stored text is identical to the search-result snippet, at most 1,000 characters. Only the university page has longer fetched text. Verification for those four was against search-result text, not the full page.
+- One saved source is a Cloudflare error page ("Just a moment..." from indeed.com, 111 characters). No claim was taken from it, but it still sits in the source list and the bibliography. A page like that should be filtered out before it is stored, and that is not done yet.
+- The "Tuesday to Thursday" finding is labelled partly supported although both claims taken from its cited source were checked as Insufficient evidence. The finding label is the writer's, and the app only downgrades a "supported" label that has no verified claim behind it.
+
+Not run: the curated evaluation (`python -m app.evaluation`) was not run against this stack, and no Ragas score exists. This was a single run, so it says nothing about accuracy or speed in general.
 ## Tests
 
 Backend, from `backend`:
@@ -218,7 +249,7 @@ Backend, from `backend`:
 pytest
 ```
 
-The suite uses in-memory SQLite, in-memory Qdrant, the hashing embedder, and stand-ins for search and the model. It covers the API, the agents, the graph, the database contract, MCP, retrieval, export, the cost and start limits, and the curated evaluation. One live test is marked `e2e` and skips without both API keys.
+At the last run the backend suite had 89 passing tests and 1 skipped (the live test), and the frontend had 18 passing tests. The suite uses in-memory SQLite, in-memory Qdrant, the hashing embedder, and stand-ins for search and the model. It covers the API, the agents, the graph, the database contract, MCP, retrieval, export, the cost and start limits, and the curated evaluation. One live test is marked `e2e` and skips without both API keys.
 
 ```powershell
 pytest -m e2e
@@ -254,8 +285,9 @@ npm test
 - Source-quality labels are rules about the publisher, author, date, and passage. They are not a reliability score.
 - The limiter and the activity log live in the API process. A restart drops events that were not already shown. The saved rows remain.
 - PDF text is written in Helvetica. Characters outside Latin-1 are replaced.
-- Ragas model-judged metrics are optional and were not given a score in an environment without an API key.
-- Docker Compose is prepared here. A public deployment was not performed or verified.
+- Ragas model-judged metrics are optional, and no Ragas score has been produced yet.
+- Bot-challenge and error pages from a site can be stored as sources. Search snippets can stand in for page text when the page is not fetched.
+- Docker Compose was started and used on one Windows machine. A public deployment was not performed or verified.
 
 ## Further work
 
