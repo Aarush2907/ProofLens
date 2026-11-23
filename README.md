@@ -164,7 +164,7 @@ docker compose up --build
 
 Compose starts PostgreSQL 16, Qdrant, the API, and the desk. Health checks gate the API on Postgres and Qdrant, and the desk on the API. The API image runs as a normal user, and Qdrant is pinned to a release the client library accepts. Volumes keep the database, Qdrant storage, and the embedding cache. The desk is built with `NEXT_PUBLIC_API_URL=http://localhost:8000`, which is the URL the browser uses. Pass `OPENAI_API_KEY` and `SEARCH_API_KEY` in the shell if you want a live run. They are not copied into the image. `.env`, `explanation.txt`, virtual environments, and local databases are in `.dockerignore`.
 
-This Compose file is the local packaging. It has not been run against a Docker daemon, and no hosted deployment was completed. See `docs/deployment.md`.
+This Compose file is the local packaging. It was built and started once with Docker Desktop on Windows: all four services reached healthy, `/api/health` reported PostgreSQL and Qdrant connected, the API ran as a non-root user, and a run with placeholder keys was saved and failed cleanly with a key-rejected message. A run with real OpenAI and Tavily keys and a hosted deployment have not been done. See `docs/deployment.md`.
 
 ## API
 

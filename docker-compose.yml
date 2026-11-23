@@ -4,8 +4,8 @@
 #
 # The Postgres and Qdrant ports are published for local inspection. On a
 # shared host, remove those two "ports" entries so only the API and the desk
-# are reachable. This file has not been run against a Docker daemon in this
-# repository's release checks.
+# are reachable. It has been started once on Docker Desktop for Windows. A run
+# with real API keys and a hosted deployment have not been checked.
 
 services:
   postgres:

@@ -94,3 +94,25 @@ def test_saved_progress_stores_the_usage_and_the_api_returns_it(client):
     assert saved["prompt_tokens"] == 2_000_000
     assert saved["completion_tokens"] == 1_000_000
     assert saved["estimated_cost_usd"] == pytest.approx(0.9)
+
+
+def test_a_rejected_key_gives_a_message_the_visitor_can_act_on(monkeypatch, set_env):
+    class AuthenticationError(Exception):
+        pass
+
+    class Refusing:
+        def parse(self, **_kwargs):
+            raise AuthenticationError("401")
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            self.chat = SimpleNamespace(completions=Refusing())
+
+    set_env(OPENAI_API_KEY="test-key-not-real")
+    monkeypatch.setattr(model_module, "OpenAI", FakeClient)
+
+    with pytest.raises(ResearchError) as raised:
+        model_module.parse_model(Verdict, "system", "user")
+
+    assert "rejected the API key" in str(raised.value)
+    assert raised.value.retryable is False

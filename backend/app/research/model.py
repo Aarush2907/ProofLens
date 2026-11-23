@@ -36,8 +36,18 @@ def parse_model(schema, system: str, user: str):
         )
     except Exception as exc:
         logger.warning("Model request failed: %s", exc.__class__.__name__)
-        retryable = exc.__class__.__name__ not in {"AuthenticationError", "PermissionDeniedError"}
-        raise ResearchError("The model request failed.", retryable=retryable) from exc
+        name = exc.__class__.__name__
+        if name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise ResearchError(
+                "OpenAI rejected the API key. Check it in Settings and try again.",
+                retryable=False,
+            ) from exc
+        if name == "RateLimitError":
+            raise ResearchError(
+                "OpenAI refused the request. The key may be out of credit or rate limited.",
+                retryable=False,
+            ) from exc
+        raise ResearchError("The model request failed.", retryable=True) from exc
 
     usage = getattr(completion, "usage", None)
     if usage is not None:
