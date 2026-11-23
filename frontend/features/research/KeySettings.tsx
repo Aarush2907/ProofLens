@@ -39,6 +39,52 @@ export function KeySettings() {
       </div>
       {open ? (
         <div className="mt-3 space-y-3">
+          <details className="rounded-lg border border-line px-3 py-2 text-sm text-muted">
+            <summary className="cursor-pointer text-foreground">How to get your keys</summary>
+            <div className="mt-3 space-y-4 leading-6">
+              <div>
+                <p className="font-medium text-foreground">OpenAI key</p>
+                <ol className="mt-1 list-decimal space-y-1 pl-5">
+                  <li>
+                    Sign in at{" "}
+                    <a className="underline underline-offset-4" href="https://platform.openai.com" target="_blank" rel="noreferrer">
+                      platform.openai.com
+                    </a>
+                    .
+                  </li>
+                  <li>
+                    Add a few dollars of credit under{" "}
+                    <a className="underline underline-offset-4" href="https://platform.openai.com/settings/organization/billing" target="_blank" rel="noreferrer">
+                      Billing
+                    </a>
+                    . A key without credit cannot run research.
+                  </li>
+                  <li>
+                    Open{" "}
+                    <a className="underline underline-offset-4" href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">
+                      API keys
+                    </a>{" "}
+                    and choose Create new secret key.
+                  </li>
+                  <li>Copy it right away. It starts with sk- and is shown only once.</li>
+                </ol>
+              </div>
+              <div>
+                <p className="font-medium text-foreground">Tavily search key</p>
+                <ol className="mt-1 list-decimal space-y-1 pl-5">
+                  <li>
+                    Create a free account at{" "}
+                    <a className="underline underline-offset-4" href="https://app.tavily.com" target="_blank" rel="noreferrer">
+                      app.tavily.com
+                    </a>
+                    .
+                  </li>
+                  <li>Open the dashboard and copy the API key. It starts with tvly-.</li>
+                </ol>
+              </div>
+              <p>Paste both keys below and choose Save keys. Revoke a key from the same page whenever you want.</p>
+            </div>
+          </details>
           <label className="block text-sm text-muted" htmlFor="openai-key">
             OpenAI API key
             <input
