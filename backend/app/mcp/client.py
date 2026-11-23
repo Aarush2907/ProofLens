@@ -18,6 +18,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from app.core.config import get_settings
 from app.research.contracts import SearchHit
+from app.research.visitor_keys import supplied
 from app.research.errors import ResearchError
 from app.research.usage import assert_within_budget, record_usage
 
@@ -103,6 +104,7 @@ class McpToolExecutor:
 
     def _call(self, name: str, arguments: dict) -> dict:
         self.start()
+        arguments = {**arguments, **_key_arguments(name)}
         timeout = get_settings().mcp_tool_timeout_seconds
         with self._call_lock:
             future = asyncio.run_coroutine_threadsafe(
@@ -151,6 +153,21 @@ def get_executor() -> McpToolExecutor:
         if _executor is None:
             _executor = McpToolExecutor()
         return _executor
+
+
+def _key_arguments(tool: str) -> dict:
+    """Pass the visitor's own key to the tool that needs it.
+
+    The keys travel over the stdio pipe to the child process and are not logged.
+    With no visitor key the child falls back to the server's own settings.
+    """
+
+    keys = supplied()
+    if tool == "search_web" and keys.search_api_key:
+        return {"search_api_key": keys.search_api_key}
+    if tool in {"extract_claims", "verify_claim"} and keys.openai_api_key:
+        return {"openai_api_key": keys.openai_api_key}
+    return {}
 
 
 def _count_tokens(payload: dict) -> None:

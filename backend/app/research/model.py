@@ -3,6 +3,7 @@ import logging
 from openai import OpenAI
 
 from app.core.config import get_settings
+from app.research.visitor_keys import openai_key
 from app.research.errors import ResearchError
 from app.research.usage import assert_within_budget, record_usage
 
@@ -11,11 +12,15 @@ logger = logging.getLogger(__name__)
 
 def parse_model(schema, system: str, user: str):
     settings = get_settings()
-    if not settings.openai_api_key:
-        raise ResearchError("OpenAI API key is not configured.", retryable=False)
+    api_key = openai_key()
+    if not api_key:
+        raise ResearchError(
+            "No OpenAI API key was provided. Add your key in Settings and try again.",
+            retryable=False,
+        )
 
     client = OpenAI(
-        api_key=settings.openai_api_key,
+        api_key=api_key,
         base_url=settings.openai_base_url or None,
         timeout=settings.openai_timeout_seconds,
         max_retries=1,

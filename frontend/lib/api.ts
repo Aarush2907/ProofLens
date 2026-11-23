@@ -5,6 +5,7 @@ import type {
   ResearchSession,
   ResearchSource,
 } from "@/types/api";
+import { keyHeaders } from "./keys";
 
 export class ApiError extends Error {
   status: number;
@@ -160,7 +161,7 @@ export async function submitReview(
 ): Promise<ResearchQuestion> {
   const response = await request(`/api/research/${id}/review`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...keyHeaders() },
     body: JSON.stringify(review),
   });
   const body = await readJson(response);
@@ -173,7 +174,7 @@ export async function submitReview(
 export async function createResearchQuestion(question: string): Promise<ResearchQuestion> {
   const response = await request("/api/research", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...keyHeaders() },
     body: JSON.stringify({ question }),
   });
   const body = await readJson(response);

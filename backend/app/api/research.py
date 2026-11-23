@@ -2,13 +2,20 @@ import asyncio
 import json
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import SessionLocal, get_db
 from app.core.errors import AppError
 from app.research.activity import activity_log
+from app.research.visitor_keys import (
+    Credentials,
+    missing_keys,
+    reset_credentials,
+    use_credentials,
+)
 from app.research.export import render_markdown, render_pdf
 from app.research.limits import get_run_limiter
 from app.models.research_question import ResearchQuestion
@@ -32,6 +39,36 @@ from app.services.research import (
 
 router = APIRouter(prefix="/research")
 
+MAX_KEY_LENGTH = 300
+
+
+def request_credentials(
+    x_openai_key: str | None = Header(default=None),
+    x_search_key: str | None = Header(default=None),
+) -> Credentials:
+    """Read the visitor's own keys. They are used for this request's run only."""
+
+    openai_key = (x_openai_key or "").strip()
+    search_key = (x_search_key or "").strip()
+    if len(openai_key) > MAX_KEY_LENGTH or len(search_key) > MAX_KEY_LENGTH:
+        raise AppError("An API key is too long.", status_code=422, code="validation_error")
+    return Credentials(openai_api_key=openai_key, search_api_key=search_key)
+
+
+def require_keys(credentials: Credentials) -> None:
+    """Refuse a run on a key-required host before any row is saved."""
+
+    if not get_settings().require_user_keys:
+        return
+    missing = missing_keys(credentials)
+    if missing:
+        names = " and ".join(missing)
+        raise AppError(
+            f"Add your {names} API key in Settings before starting a run.",
+            status_code=400,
+            code="keys_required",
+        )
+
 
 @router.get("", response_model=list[ResearchQuestionRead])
 def read_research_questions(
@@ -47,7 +84,9 @@ def create_question(
     background: BackgroundTasks,
     db: Session = Depends(get_db),
     run_research=Depends(get_research_runner),
+    credentials: Credentials = Depends(request_credentials),
 ) -> ResearchQuestion:
+    require_keys(credentials)
     limiter = get_run_limiter()
     if not limiter.try_acquire():
         raise AppError(
@@ -60,7 +99,7 @@ def create_question(
     except Exception:
         limiter.release()
         raise
-    background.add_task(_run_and_release, run_research, record.id)
+    background.add_task(_run_and_release, run_research, record.id, credentials)
     return record
 
 
@@ -87,6 +126,7 @@ def review_question(
     background: BackgroundTasks,
     db: Session = Depends(get_db),
     resume=Depends(get_review_runner),
+    credentials: Credentials = Depends(request_credentials),
 ) -> ResearchQuestion:
     record = get_research_question(db, question_id)
     if record.stage != "awaiting_review":
@@ -104,7 +144,8 @@ def review_question(
                 status_code=422,
                 code="validation_error",
             )
-    background.add_task(resume, record.id, payload.model_dump(mode="json"))
+    require_keys(credentials)
+    background.add_task(_resume_with_keys, resume, record.id, payload.model_dump(mode="json"), credentials)
     return record
 
 
@@ -145,11 +186,21 @@ async def stream_activity(question_id: uuid.UUID, request: Request) -> Streaming
     )
 
 
-def _run_and_release(run, question_id: uuid.UUID) -> None:
+def _run_and_release(run, question_id: uuid.UUID, credentials: Credentials) -> None:
+    token = use_credentials(credentials)
     try:
         run(question_id)
     finally:
+        reset_credentials(token)
         get_run_limiter().release()
+
+
+def _resume_with_keys(resume, question_id: uuid.UUID, decision: dict, credentials: Credentials) -> None:
+    token = use_credentials(credentials)
+    try:
+        resume(question_id, decision)
+    finally:
+        reset_credentials(token)
 
 
 def _question_exists(question_id: uuid.UUID) -> bool:

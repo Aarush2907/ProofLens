@@ -30,6 +30,8 @@ class Settings(BaseSettings):
         "postgresql+psycopg://prooflens:prooflens@localhost:5432/prooflens"
     )
     openai_api_key: str = ""
+    # When true, a run only uses keys sent by the visitor. The keys above are ignored.
+    require_user_keys: bool = False
     openai_model: str = "gpt-4o-mini"
     openai_base_url: str = ""
     openai_timeout_seconds: float = 40

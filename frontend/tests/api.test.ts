@@ -95,3 +95,41 @@ describe("research API client", () => {
     await expect(fetchResearchSession(question.id)).rejects.toThrow(/could not be loaded/);
   });
 });
+
+describe("visitor API keys", () => {
+  it("sends the saved keys as headers when a question is created", async () => {
+    const store = new Map<string, string>([
+      ["prooflens.openaiKey", "sk-visitor"],
+      ["prooflens.searchKey", "tvly-visitor"],
+    ]);
+    vi.stubGlobal("sessionStorage", {
+      getItem: (name: string) => store.get(name) ?? null,
+      setItem: (name: string, value: string) => store.set(name, value),
+      removeItem: (name: string) => store.delete(name),
+    });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => question });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createResearchQuestion("What evidence links sleep and memory consolidation?");
+
+    const headers = fetchMock.mock.calls[0][1].headers;
+    expect(headers["X-OpenAI-Key"]).toBe("sk-visitor");
+    expect(headers["X-Search-Key"]).toBe("tvly-visitor");
+  });
+
+  it("sends no key headers when none are saved", async () => {
+    vi.stubGlobal("sessionStorage", {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => question });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createResearchQuestion("What evidence links sleep and memory consolidation?");
+
+    const headers = fetchMock.mock.calls[0][1].headers;
+    expect(headers["X-OpenAI-Key"]).toBeUndefined();
+    expect(headers["X-Search-Key"]).toBeUndefined();
+  });
+});

@@ -48,3 +48,5 @@ Terminate TLS at Caddy, nginx, or the host's load balancer. Point the domain at 
 `docker compose up` was not run as a verified production deploy in this release. Confirm Docker on the target host, set real secrets, open the health check, run one research question, and download the Markdown and PDF before treating the host as ready.
 
 The Compose file sets health checks on every service, runs the API as a non-root user, and pins Qdrant to v1.20.2 to match the client library. None of that has been exercised on a Docker daemon yet. The start and concurrency limits are process-wide, so run one API process or put a rate limit in the proxy.
+
+Bring-your-own-key: Compose sets REQUIRE_USER_KEYS=true, so the host holds no model or search key and pays nothing for visitors' runs. Keys arrive in request headers, so serve the API over TLS or they cross the network in clear text. The per-run cost cap still applies to the visitor's key.

@@ -3,6 +3,7 @@ import logging
 import httpx
 
 from app.core.config import get_settings
+from app.research.visitor_keys import search_key
 from app.research.contracts import SearchHit
 from app.research.errors import ResearchError
 
@@ -37,14 +38,18 @@ def search_web(query: str, limit: int) -> list[SearchHit]:
             f"Search provider '{settings.search_provider}' is not supported.",
             retryable=False,
         )
-    if not settings.search_api_key:
-        raise ResearchError("Search API key is not configured.", retryable=False)
+    api_key = search_key()
+    if not api_key:
+        raise ResearchError(
+            "No search API key was provided. Add your Tavily key in Settings and try again.",
+            retryable=False,
+        )
 
     try:
         response = httpx.post(
             "https://api.tavily.com/search",
             json={
-                "api_key": settings.search_api_key,
+                "api_key": api_key,
                 "query": query,
                 "max_results": limit,
                 "search_depth": "basic",
@@ -57,7 +62,7 @@ def search_web(query: str, limit: int) -> list[SearchHit]:
         raise ResearchError("The search request failed.", retryable=True) from exc
 
     if response.status_code in {401, 403}:
-        raise ResearchError("The search API rejected the configured key.", retryable=False)
+        raise ResearchError("The search API rejected the key that was provided.", retryable=False)
     if response.status_code >= 400:
         logger.warning("Search API returned status %s", response.status_code)
         raise ResearchError(

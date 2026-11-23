@@ -145,6 +145,7 @@ The root `.env.example` lists every variable. Environment variables override the
 
 - `DATABASE_URL` is PostgreSQL in normal use. Tests set SQLite before the app is imported.
 - `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_BASE_URL` configure the chat model. Leave the key empty to run tests only.
+- `REQUIRE_USER_KEYS` is `true` in Compose. A visitor then enters their own OpenAI and Tavily keys under "API keys" on the desk. The browser keeps them in the tab (sessionStorage) and sends them as `X-OpenAI-Key` and `X-Search-Key` headers on the start and review requests. The server holds them in memory for that run, passes them to the MCP child over its stdio pipe, and does not store or log them. The host's own keys are ignored. A request without keys gets `400` before any row is saved. Locally the default is `false`, and `.env` keys are used.
 - `SEARCH_PROVIDER` is `tavily`. `SEARCH_API_KEY` is required for a live search.
 - `EMBEDDING_PROVIDER` is `fastembed` or `hash`. `EMBEDDING_MODEL` is separate from `OPENAI_MODEL`.
 - `QDRANT_URL` empty means the local `.qdrant` directory. Set the URL to use a Qdrant service. Do not point the API and another process at the same local path.

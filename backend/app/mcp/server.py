@@ -15,6 +15,7 @@ from app.mcp.schemas import (
     SearchWebOutput,
     VerifyClaimOutput,
 )
+from app.research.visitor_keys import Credentials, reset_credentials, use_credentials
 from app.research.errors import ResearchError
 
 server = MCPServer(
@@ -35,12 +36,15 @@ def _fail(exc: Exception) -> None:
     name="search_web",
     description="Search the web for sources that might bear on a research question. Returns titles, URLs, and snippets. Does not decide whether a claim is true.",
 )
-def search_web(query: str, limit: int = 5) -> SearchWebOutput:
+def search_web(query: str, limit: int = 5, search_api_key: str = "") -> SearchWebOutput:
     """Search the configured web search provider."""
+    token = use_credentials(Credentials(search_api_key=search_api_key))
     try:
         return SearchWebOutput.model_validate(tools.search_web(query, limit))
     except (tools.ToolInputError, ResearchError) as exc:
         _fail(exc)
+    finally:
+        reset_credentials(token)
 
 
 @server.tool(
@@ -67,24 +71,30 @@ def retrieve_source(
     name="extract_claims",
     description="Extract checkable statements from source passages. Each claim keeps the source URL it was taken from. The caller decides which claims to keep.",
 )
-def extract_claims(sources: list[dict]) -> ExtractClaimsOutput:
+def extract_claims(sources: list[dict], openai_api_key: str = "") -> ExtractClaimsOutput:
     """Pull claim drafts out of already retrieved source text."""
+    token = use_credentials(Credentials(openai_api_key=openai_api_key))
     try:
         return ExtractClaimsOutput.model_validate(tools.extract_claims(sources))
     except (tools.ToolInputError, ResearchError) as exc:
         _fail(exc)
+    finally:
+        reset_credentials(token)
 
 
 @server.tool(
     name="verify_claim",
     description="Compare one claim with one passage and return a status, an explanation, and any quoted excerpt. The excerpt is not trusted until the caller checks that it appears in the passage.",
 )
-def verify_claim(claim: str, passage: str) -> VerifyClaimOutput:
+def verify_claim(claim: str, passage: str, openai_api_key: str = "") -> VerifyClaimOutput:
     """Ask the model to judge one claim against one passage."""
+    token = use_credentials(Credentials(openai_api_key=openai_api_key))
     try:
         return VerifyClaimOutput.model_validate(tools.verify_claim(claim, passage))
     except (tools.ToolInputError, ResearchError) as exc:
         _fail(exc)
+    finally:
+        reset_credentials(token)
 
 
 @server.tool(

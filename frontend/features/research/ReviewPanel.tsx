@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { KeySettings } from "@/features/research/KeySettings";
 import { submitReview } from "@/lib/api";
 import type { ResearchSession } from "@/types/api";
 
@@ -77,6 +78,9 @@ export function ReviewPanel({ session, onSubmitted }: { session: ResearchSession
           className="mt-2 w-full rounded-xl border border-line bg-ink px-3 py-2 text-sm text-foreground"
         />
       </label>
+      <div className="mt-4">
+        <KeySettings />
+      </div>
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
       {session.error_message ? <p className="mt-3 text-sm text-danger">{session.error_message}</p> : null}
       <div className="mt-4 flex flex-wrap gap-3">

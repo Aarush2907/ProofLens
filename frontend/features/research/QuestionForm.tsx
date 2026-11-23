@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { KeySettings } from "@/features/research/KeySettings";
 import { MAX_QUESTION_LENGTH, validateQuestion } from "@/lib/question";
 
 export function QuestionForm({
@@ -69,6 +70,9 @@ export function QuestionForm({
         placeholder="What evidence has changed around this claim, and which sources disagree?"
         className="mt-3 w-full resize-y rounded-xl border border-line bg-ink px-4 py-3 text-[15px] leading-7 text-foreground outline-none placeholder:text-muted/70 focus:border-brass/70"
       />
+      <div className="mt-4">
+        <KeySettings />
+      </div>
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-muted">
           {trimmedLength} / {MAX_QUESTION_LENGTH}
