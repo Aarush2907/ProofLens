@@ -32,7 +32,7 @@ def check_claims(state: dict, model, retrieve_evidence=None, verify=None) -> dic
             verdict = _missing_passage(claim["id"])
         else:
             raw = verify(claim["text"], passage) if verify is not None else model(Verdict, SYSTEM, _prompt(claim, passage)).model_dump()
-            grounded = ground_verdict(raw, passage)
+            grounded = ground_verdict(raw, passage, claim["text"], claim.get("kind", ""))
             grounded.update(_attribution(grounded, retrieved, claim))
             _note_memory(grounded, retrieved)
             verdict = {"claim_id": claim["id"], **grounded}

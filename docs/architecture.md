@@ -100,7 +100,7 @@ Page text is wrapped in `<untrusted_source>` before it is placed in a prompt. Th
 
 ## Evaluation, cost, and export
 
-`python -m app.evaluation` scores a curated dataset with deterministic checks: citation support, grounded verification, retrieval rank, context overlap, answer overlap, source freshness, and whether a supported statistic's numbers appear in the excerpt. Ragas faithfulness, answer relevancy, and context precision run only when `OPENAI_API_KEY` is set and the library imports. If either is missing, the report says the score was not run. A high score does not mean a claim is true.
+`python -m app.evaluation` scores a curated dataset with deterministic checks: citation support, grounded verification, retrieval rank, context overlap, answer overlap, source freshness, and whether a supported statistic's numbers appear in the excerpt. The same number rule runs in the fact checker, so a statistic whose quotation lacks the claim's numbers is downgraded to Insufficient evidence in the product too. Ragas faithfulness, answer relevancy, and context precision run only when `OPENAI_API_KEY` is set and the library imports. If either is missing, the report says the score was not run. A high score does not mean a claim is true.
 
 Each model call records token counts. The question row stores those counts and an approximate USD cost from `PROMPT_PRICE_PER_MILLION` and `COMPLETION_PRICE_PER_MILLION`. A run that passes `MAX_RUN_COST_USD` stops and is not retried. `POST /api/research` returns 429 when too many runs are already active or were started in the current window.
 
@@ -113,3 +113,7 @@ Markdown and PDF exports are built from the saved session. A citation that is no
 ## Still not in the product
 
 There is no numeric source-reliability score. The review step is a person's decision, not an evaluation score. Live research still needs an OpenAI key and a Tavily key.
+
+## Safety and recovery
+
+Page fetches resolve the host and refuse non-public addresses on every redirect hop (pp/research/netguard.py). The MCP child returns the tokens it spent in each tool result, and the API adds them to the run before checking the cost cap. On startup pp/research/recovery.py marks runs left in progress by a restart as failed, except runs waiting for review, whose checkpoint still resumes.

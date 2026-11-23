@@ -96,7 +96,7 @@ class EvidenceIndex:
         return {
             "text": " ".join(point.payload.get("text") or "" for point in same_copy).strip(),
             "retrieved_at": retrieved_at,
-            "possibly_outdated": _is_outdated(retrieved_at),
+            "possibly_outdated": is_outdated(retrieved_at),
             "session_id": newest.payload.get("session_id") or "",
             "source_id": newest.payload.get("source_id") or "",
             "title": newest.payload.get("title") or "",
@@ -183,12 +183,12 @@ def _passage(hit, *, from_memory: bool) -> dict:
         "session_id": payload.get("session_id") or "",
         "score": round(float(hit.score), 4),
         "retrieved_at": retrieved_at,
-        "possibly_outdated": _is_outdated(retrieved_at),
+        "possibly_outdated": is_outdated(retrieved_at),
         "from_memory": from_memory,
     }
 
 
-def _is_outdated(retrieved_at: str) -> bool:
+def is_outdated(retrieved_at: str) -> bool:
     if not retrieved_at:
         return True
     try:

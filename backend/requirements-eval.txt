@@ -1,0 +1,6 @@
+-r requirements.txt
+# Optional. Only the Ragas model-judged metrics need this, and only when
+# OPENAI_API_KEY is set. 0.2.15 installs from wheels without a C++ compiler.
+# Later releases depend on scikit-network, which needed a compiler to build
+# on the development machine. Re-check the pin before upgrading.
+ragas==0.2.15

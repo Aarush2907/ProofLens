@@ -1,6 +1,11 @@
 # Local stack. The database password is the same placeholder as .env.example.
 # Do not use it on a machine other people can reach. Pass real keys from the
 # shell environment. They are not written into the images.
+#
+# The Postgres and Qdrant ports are published for local inspection. On a
+# shared host, remove those two "ports" entries so only the API and the desk
+# are reachable. This file has not been run against a Docker daemon in this
+# repository's release checks.
 
 services:
   postgres:
@@ -17,10 +22,12 @@ services:
       timeout: 3s
       retries: 10
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   qdrant:
-    image: qdrant/qdrant:v1.13.4
+    # The client in backend/requirements.txt is 1.20. Its compatibility check
+    # accepts a server within one minor version.
+    image: qdrant/qdrant:v1.20.2
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
@@ -29,13 +36,14 @@ services:
       timeout: 3s
       retries: 10
     ports:
-      - "6333:6333"
+      - "127.0.0.1:6333:6333"
 
   backend:
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
     environment:
+      ENVIRONMENT: production
       DATABASE_URL: postgresql+psycopg://prooflens:prooflens@postgres:5432/prooflens
       QDRANT_URL: http://qdrant:6333
       QDRANT_PATH: ""
@@ -47,7 +55,7 @@ services:
       SEARCH_API_KEY: ${SEARCH_API_KEY:-}
       SEARCH_PROVIDER: tavily
     volumes:
-      - embedding_cache:/root/.cache
+      - embedding_cache:/home/app/.cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,7 +71,8 @@ services:
       args:
         NEXT_PUBLIC_API_URL: http://localhost:8000
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "3000:3000"
 

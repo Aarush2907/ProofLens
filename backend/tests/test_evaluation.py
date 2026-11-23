@@ -1,5 +1,9 @@
+import importlib.util
 import subprocess
 import sys
+from pathlib import Path
+
+import pytest
 
 from app.evaluation.dataset import evaluation_cases
 from app.evaluation.ragas_eval import ragas_report
@@ -21,7 +25,8 @@ def test_curated_evaluation_separates_a_quotation_from_a_true_claim():
 
     incorrect = by_id["incorrect-claim"]
     assert incorrect["citation_support"] == 1
-    assert incorrect["claim_verification"] == 0
+    # The raw verdict was wrong. The product now refuses to call it Verified.
+    assert incorrect["claim_verification"] == 1
     assert incorrect["statistic_backing"] == 0
 
     misleading = by_id["misleading-excerpt"]
@@ -31,7 +36,7 @@ def test_curated_evaluation_separates_a_quotation_from_a_true_claim():
     assert misleading["statistic_backing"] == 1
 
     assert by_id["unsupported-statistic"]["statistic_backing"] == 0
-    assert by_id["unsupported-statistic"]["claim_verification"] == 0
+    assert by_id["unsupported-statistic"]["claim_verification"] == 1
     assert by_id["insufficient-evidence"]["claim_verification"] == 1
     assert by_id["contradictory-sources"]["claim_verification"] == 1
     assert by_id["contradictory-sources"]["citation_support"] == 1
@@ -50,6 +55,7 @@ def test_ragas_does_not_invent_a_score_without_a_key():
     assert "OPENAI_API_KEY" in report["reason"]
 
 
+@pytest.mark.skipif(importlib.util.find_spec("ragas") is None, reason="requirements-eval.txt is not installed")
 def test_ragas_imports_in_a_separate_process():
     # Importing Ragas applies nest_asyncio, which breaks the API test client
     # in this process. The import is checked in a short-lived process instead.

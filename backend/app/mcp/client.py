@@ -19,6 +19,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from app.core.config import get_settings
 from app.research.contracts import SearchHit
 from app.research.errors import ResearchError
+from app.research.usage import assert_within_budget, record_usage
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 _executor = None
@@ -85,10 +86,13 @@ class McpToolExecutor:
             for source in sources
         ]
         payload = self._call("extract_claims", {"sources": packet})
+        _count_tokens(payload)
         return list(payload.get("claims") or [])
 
     def verify(self, claim: str, passage: str) -> dict:
-        return self._call("verify_claim", {"claim": claim, "passage": passage})
+        payload = self._call("verify_claim", {"claim": claim, "passage": passage})
+        _count_tokens(payload)
+        return payload
 
     def evidence(self, query: str, session_id: str) -> list[dict]:
         payload = self._call(
@@ -147,6 +151,13 @@ def get_executor() -> McpToolExecutor:
         if _executor is None:
             _executor = McpToolExecutor()
         return _executor
+
+
+def _count_tokens(payload: dict) -> None:
+    """Add the server-side model use to this run, then enforce the cost cap."""
+
+    record_usage(payload.pop("prompt_tokens", 0) or 0, payload.pop("completion_tokens", 0) or 0)
+    assert_within_budget()
 
 
 def _payload(name: str, result) -> dict:

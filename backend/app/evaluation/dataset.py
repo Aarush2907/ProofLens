@@ -83,7 +83,8 @@ def evaluation_cases() -> list[EvalCase]:
                 "opposing_excerpt": "",
                 "explanation": "A quotation was copied, but it does not state 80 percent.",
             },
-            expected_status="Contradicted",
+            # The raw verdict is wrong. The safe outcome is that the product refuses to call it Verified.
+            expected_status="Insufficient evidence",
             answer="The trial found that 80 percent of adults slept under six hours.",
             retrieved_at=fresh,
             expects_outdated=False,

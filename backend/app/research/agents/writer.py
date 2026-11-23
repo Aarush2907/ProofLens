@@ -64,7 +64,7 @@ def _packet(state: dict) -> str:
     if not state.get("contradictions"):
         lines.append("None.")
     for item in state.get("contradictions") or []:
-        lines.append(f"- {item['explanation']} Context: {item.get('context', '')}")
+        lines.append(f"- {untrusted(item['explanation'])} Context: {untrusted(item.get('context', ''))}")
     return "\n".join(lines)[:12000]
 
 

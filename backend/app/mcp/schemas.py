@@ -32,6 +32,8 @@ class ExtractedClaimOutput(BaseModel):
 
 class ExtractClaimsOutput(BaseModel):
     claims: list[ExtractedClaimOutput]
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class VerifyClaimOutput(BaseModel):
@@ -39,6 +41,8 @@ class VerifyClaimOutput(BaseModel):
     explanation: str
     supporting_excerpt: str = ""
     opposing_excerpt: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class EvidencePassageOutput(BaseModel):

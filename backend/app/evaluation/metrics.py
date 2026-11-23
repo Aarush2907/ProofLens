@@ -8,11 +8,16 @@ words occur in the passage.
 import re
 
 from app.evaluation.dataset import EvalCase
-from app.research.checks import GROUNDED_STATUSES, ground_verdict, normalise_status, passage_contains
+from app.research.checks import (
+    GROUNDED_STATUSES,
+    ground_verdict,
+    normalise_status,
+    passage_contains,
+    statistic_is_backed,
+)
 from app.research.embeddings import HashingEmbedder
-from app.research.index import _is_outdated
+from app.research.index import is_outdated
 
-_NUMBER = re.compile(r"\d+(?:\.\d+)?")
 _TOKEN = re.compile(r"[a-z0-9]+")
 
 
@@ -41,7 +46,7 @@ def citation_support(case: EvalCase) -> float:
 
 
 def claim_verification(case: EvalCase) -> float:
-    grounded = ground_verdict(case.verdict, case.passage)
+    grounded = ground_verdict(case.verdict, case.passage, case.claim, case.claim_kind)
     return 1.0 if grounded["status"] == case.expected_status else 0.0
 
 
@@ -77,14 +82,15 @@ def answer_grounding(case: EvalCase) -> float:
 
 
 def source_freshness(case: EvalCase) -> float:
-    return 1.0 if _is_outdated(case.retrieved_at) == case.expects_outdated else 0.0
+    return 1.0 if is_outdated(case.retrieved_at) == case.expects_outdated else 0.0
 
 
 def statistic_backing(case: EvalCase) -> float | None:
-    """Every number in a supported statistic must appear in the excerpt.
+    """Score the checker's raw verdict, before grounding.
 
-    This catches a real sentence that is about a different figure. It does not
-    catch a sentence that names the figure in order to deny it.
+    Every number in a supported statistic should appear in its excerpt. A 0
+    means the raw verdict needed the product's guard to be downgraded. This
+    does not catch a sentence that names the figure in order to deny it.
     """
 
     if case.claim_kind != "statistic":
@@ -92,12 +98,8 @@ def statistic_backing(case: EvalCase) -> float | None:
     status = normalise_status(case.verdict.get("status", ""))
     if status not in GROUNDED_STATUSES:
         return 1.0
-    numbers = _NUMBER.findall(case.claim)
-    if not numbers:
-        return 0.0
     excerpt = case.verdict.get("supporting_excerpt") or ""
-    present = set(_NUMBER.findall(excerpt))
-    return 1.0 if all(number in present for number in numbers) else 0.0
+    return 1.0 if statistic_is_backed(case.claim, excerpt) else 0.0
 
 
 def _contained(excerpt: str, passage: str) -> float:

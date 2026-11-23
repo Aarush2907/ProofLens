@@ -15,6 +15,7 @@ from app.research.model import parse_model
 from app.research.pages import fetch_page_text
 from app.research.safety import DATA_RULE, untrusted
 from app.research.search import search_web as search_provider
+from app.research.usage import current_usage, reset_usage, start_usage
 
 EXTRACT_SYSTEM = (
     "Extract checkable statements from the supplied sources. "
@@ -127,12 +128,16 @@ def extract_claims(sources: list[dict]) -> dict:
         )
     if not blocks:
         return {"claims": []}
-    batch = parse_model(ClaimBatch, EXTRACT_SYSTEM, "\n\n".join(blocks))
+    batch, prompt_tokens, completion_tokens = _parse_with_usage(
+        ClaimBatch, EXTRACT_SYSTEM, "\n\n".join(blocks)
+    )
     return {
         "claims": [
             {"source_url": claim.source_url, "text": claim.text, "kind": claim.kind}
             for claim in batch.claims
-        ]
+        ],
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
     }
 
 
@@ -148,12 +153,16 @@ def verify_claim(claim: str, passage: str) -> dict:
             "supporting_excerpt": "",
             "opposing_excerpt": "",
         }
-    verdict = parse_model(
+    verdict, prompt_tokens, completion_tokens = _parse_with_usage(
         Verdict,
         VERIFY_SYSTEM,
         f"Claim: {claim_text}\n\nPassage:\n{untrusted(passage_text[:5000])}",
     )
-    return verdict.model_dump()
+    return {
+        **verdict.model_dump(),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+    }
 
 
 def search_evidence(query: str, session_id: str, limit: int = 4) -> dict:
@@ -169,6 +178,22 @@ def search_evidence(query: str, session_id: str, limit: int = 4) -> dict:
     except Exception as exc:
         raise ResearchError("Evidence search failed.", retryable=True) from exc
     return {"passages": passages}
+
+
+def _parse_with_usage(schema, system: str, user: str):
+    """Run the model and report its token use.
+
+    This code runs in the MCP server process, which cannot update the API
+    process's counter. The tokens go back in the tool result instead.
+    """
+
+    token = start_usage()
+    try:
+        parsed = parse_model(schema, system, user)
+        usage = current_usage()
+        return parsed, usage.prompt_tokens, usage.completion_tokens
+    finally:
+        reset_usage(token)
 
 
 def _query(query: str) -> str:

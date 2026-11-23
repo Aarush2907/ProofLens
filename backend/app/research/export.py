@@ -7,34 +7,17 @@ can be downloaded before the writer finishes, and it says so.
 from app.research.checks import canonical_url
 from app.schemas.research import ResearchSessionRead
 
-_METHOD = (
-    "ProofLens searched for sources, stored the retrieved passages, extracted claims, "
-    "and checked each claim against those passages. A quotation was kept only when it "
-    "appeared in the passage. Disagreements between sources were recorded separately. "
-    "A person reviewed the claims before the report was written. "
-    "This export lists what was saved. It does not add sources that were not collected."
+CLAIM_GROUPS = (
+    ("Verified", "verified"),
+    ("Partially supported", "partial"),
+    ("Contradicted", "contradicted"),
+    ("Insufficient evidence", "insufficient"),
 )
 
 
 def render_markdown(session: ResearchSessionRead) -> str:
-    document = build_document(session)
     lines = ["# ProofLens research report", ""]
-    sections = [
-        ("Research question", [document["question"]]),
-        ("Executive summary", [document["summary"]]),
-        ("Methodology", [document["methodology"]]),
-        ("Important findings", _findings(document["findings"])),
-        ("Verified claims", _claims(document["verified"])),
-        ("Partially supported claims", _claims(document["partial"])),
-        ("Contradicted claims", _claims(document["contradicted"])),
-        ("Insufficient evidence", _claims(document["insufficient"])),
-        ("Supporting sources", _sources(document["supporting_sources"])),
-        ("Opposing sources", _sources(document["opposing_sources"])),
-        ("Contradiction summary", document["contradictions"] or ["No contradiction was saved."]),
-        ("Limitations", document["limitations"]),
-        ("Source bibliography", _bibliography(document["bibliography"])),
-    ]
-    for title, body in sections:
+    for title, body in build_sections(build_document(session)):
         lines.append(f"## {title}")
         lines.append("")
         lines.extend(body)
@@ -45,100 +28,122 @@ def render_markdown(session: ResearchSessionRead) -> str:
 def render_pdf(session: ResearchSessionRead) -> bytes:
     from fpdf import FPDF
 
-    document = build_document(session)
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=16)
     pdf.add_page()
-    pdf.set_font("Helvetica", size=16)
-    pdf.multi_cell(0, 8, _pdf_text("ProofLens research report"), new_x="LMARGIN", new_y="NEXT")
+    _write(pdf, 16, 8, "ProofLens research report")
     pdf.ln(2)
-    blocks = [
-        ("Research question", document["question"]),
-        ("Executive summary", document["summary"]),
-        ("Methodology", document["methodology"]),
-        ("Important findings", "\n".join(_findings(document["findings"]))),
-        ("Verified claims", "\n".join(_claims(document["verified"]))),
-        ("Partially supported claims", "\n".join(_claims(document["partial"]))),
-        ("Contradicted claims", "\n".join(_claims(document["contradicted"]))),
-        ("Insufficient evidence", "\n".join(_claims(document["insufficient"]))),
-        ("Supporting sources", "\n".join(_sources(document["supporting_sources"]))),
-        ("Opposing sources", "\n".join(_sources(document["opposing_sources"]))),
-        ("Contradiction summary", "\n".join(document["contradictions"] or ["No contradiction was saved."])),
-        ("Limitations", "\n".join(document["limitations"])),
-        ("Source bibliography", "\n".join(_bibliography(document["bibliography"]))),
-    ]
-    for title, body in blocks:
-        pdf.set_x(pdf.l_margin)
-        pdf.set_font("Helvetica", size=12)
-        pdf.multi_cell(0, 7, _pdf_text(title), new_x="LMARGIN", new_y="NEXT")
-        pdf.set_x(pdf.l_margin)
-        pdf.set_font("Helvetica", size=10)
-        pdf.multi_cell(0, 5, _pdf_text(body or "None saved."), new_x="LMARGIN", new_y="NEXT")
+    for title, body in build_sections(build_document(session)):
+        _write(pdf, 12, 7, title)
+        _write(pdf, 10, 5, "\n".join(body))
         pdf.ln(2)
     return bytes(pdf.output())
 
 
+def build_sections(document: dict) -> list[tuple[str, list[str]]]:
+    return [
+        ("Research question", [document["question"]]),
+        ("Executive summary", [document["summary"]]),
+        ("Methodology", [document["methodology"]]),
+        ("Important findings", _findings(document["findings"])),
+        ("Verified claims", _claims(document["verified"])),
+        ("Partially supported claims", _claims(document["partial"])),
+        ("Contradicted claims", _claims(document["contradicted"])),
+        ("Insufficient evidence", _claims(document["insufficient"])),
+        ("Rejected in review", _claims(document["rejected"])),
+        ("Supporting sources", _or_none(document["supporting_sources"])),
+        ("Opposing sources", _or_none(document["opposing_sources"])),
+        ("Contradiction summary", document["contradictions"] or ["No contradiction was saved."]),
+        ("Limitations", document["limitations"]),
+        ("Source bibliography", document["bibliography"] or ["No source was saved."]),
+    ]
+
+
 def build_document(session: ResearchSessionRead) -> dict:
     known = {canonical_url(source.url): source for source in session.sources if canonical_url(source.url)}
-    grouped = {
-        "Verified": [],
-        "Partially supported": [],
-        "Contradicted": [],
-        "Insufficient evidence": [],
-    }
-    supporting = set()
-    opposing = set()
+    groups: dict[str, list[dict]] = {key: [] for _status, key in CLAIM_GROUPS}
+    groups["rejected"] = []
+    supporting: set[str] = set()
+    opposing: set[str] = set()
+    status_keys = dict(CLAIM_GROUPS)
     for claim in session.claims:
+        entry = {"text": claim.text, "url": claim.source_url}
+        if claim.review_status == "rejected":
+            groups["rejected"].append(entry)
+            continue
         status = claim.verification.status if claim.verification else "Insufficient evidence"
-        grouped.setdefault(status, []).append(
-            {"text": claim.text, "url": claim.source_url, "kind": claim.kind}
-        )
+        groups[status_keys.get(status, "insufficient")].append(entry)
         for item in claim.evidence:
             url = canonical_url(item.source_url)
             if url not in known:
                 continue
-            if item.stance == "supporting":
-                supporting.add(url)
-            elif item.stance == "opposing":
-                opposing.add(url)
+            (supporting if item.stance == "supporting" else opposing).add(url)
 
-    findings = []
+    summary = "The writer has not finished a report for this run. The sections below are the evidence saved so far."
     limitations = [
         "A passage check shows whether the collected text supports the claim. It does not prove the claim is true outside that text.",
     ]
-    summary = (
-        "The writer has not finished a report for this run. The sections below are the evidence saved so far."
-    )
+    findings = []
     if session.report is not None:
         summary = session.report.summary or summary
         limitations.extend(session.report.limitations)
-        for finding in session.report.findings:
-            urls = []
-            for url in finding.citation_urls:
-                canonical = canonical_url(url)
-                if canonical in known:
-                    urls.append(known[canonical].url)
-            findings.append({"text": finding.text, "certainty": finding.certainty, "citation_urls": urls})
+        findings = [
+            {
+                "text": finding.text,
+                "certainty": finding.certainty,
+                "citation_urls": [
+                    known[canonical_url(url)].url for url in finding.citation_urls if canonical_url(url) in known
+                ],
+            }
+            for finding in session.report.findings
+        ]
 
-    contradictions = [
-        f"{item.claim_text} ({item.source_url}) disagrees with {item.other_claim_text} ({item.other_source_url}). {item.explanation}"
-        for item in session.contradictions
-    ]
     return {
         "question": session.question,
         "summary": summary,
-        "methodology": _METHOD,
+        "methodology": describe_method(session),
         "findings": findings,
-        "verified": grouped["Verified"],
-        "partial": grouped["Partially supported"],
-        "contradicted": grouped["Contradicted"],
-        "insufficient": grouped["Insufficient evidence"],
+        **groups,
         "supporting_sources": [_source_line(known[url]) for url in sorted(supporting)],
         "opposing_sources": [_source_line(known[url]) for url in sorted(opposing)],
-        "contradictions": contradictions,
+        "contradictions": [
+            f"{item.claim_text} ({item.source_url}) disagrees with {item.other_claim_text} "
+            f"({item.other_source_url}). {item.explanation}"
+            for item in session.contradictions
+        ],
         "limitations": limitations,
         "bibliography": [_source_line(source) for source in session.sources],
     }
+
+
+def describe_method(session: ResearchSessionRead) -> str:
+    """Describe only the steps that left saved results."""
+
+    steps = []
+    if session.sources:
+        steps.append(f"ProofLens collected {len(session.sources)} source(s) and stored their text.")
+    else:
+        steps.append("No source was collected for this run.")
+    if session.claims:
+        steps.append(
+            f"It extracted {len(session.claims)} claim(s) and checked each against the retrieved passages. "
+            "A quotation was kept only when it appeared in the passage."
+        )
+    if session.contradictions:
+        steps.append("Disagreements between sources were recorded separately.")
+
+    approved = sum(1 for claim in session.claims if claim.review_status == "approved")
+    rejected = sum(1 for claim in session.claims if claim.review_status == "rejected")
+    if approved or rejected:
+        steps.append(f"A person reviewed the claims ({approved} approved, {rejected} rejected).")
+    elif session.stage == "awaiting_review":
+        steps.append("The claims are waiting for review.")
+    elif session.claims:
+        steps.append("No review decision was saved.")
+    if session.status == "failed" and session.error_message:
+        steps.append(f"The run stopped: {session.error_message}")
+    steps.append("This export lists what was saved. It does not add sources that were not collected.")
+    return " ".join(steps)
 
 
 def _findings(findings: list[dict]) -> list[str]:
@@ -157,18 +162,17 @@ def _claims(claims: list[dict]) -> list[str]:
     return [f"- {claim['text']} ({claim['url']})" for claim in claims]
 
 
-def _sources(lines: list[str]) -> list[str]:
+def _or_none(lines: list[str]) -> list[str]:
     return lines or ["None saved."]
 
 
-def _bibliography(lines: list[str]) -> list[str]:
-    return lines or ["No source was saved."]
-
-
 def _source_line(source) -> str:
-    title = source.title or source.url
-    return f"{title} — {source.url}"
+    return f"{source.title or source.url} - {source.url}"
 
 
-def _pdf_text(value: str) -> str:
-    return value.encode("latin-1", "replace").decode("latin-1")
+def _write(pdf, size: int, line_height: int, text: str) -> None:
+    pdf.set_x(pdf.l_margin)
+    pdf.set_font("Helvetica", size=size)
+    # Core fonts are Latin-1 only. Other characters become "?" instead of failing.
+    safe = text.encode("latin-1", "replace").decode("latin-1")
+    pdf.multi_cell(0, line_height, safe, new_x="LMARGIN", new_y="NEXT")

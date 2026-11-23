@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.database import init_database
 from app.core.errors import AppError
 from app.core.logging import configure_logging, database_dialect
+from app.research.recovery import mark_interrupted_runs
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ def create_app() -> FastAPI:
         )
         try:
             init_database()
+            mark_interrupted_runs()
         except Exception:
             logger.exception(
                 "Database initialisation failed. The API will stay up and report the database as unavailable."

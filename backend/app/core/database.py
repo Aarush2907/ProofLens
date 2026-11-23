@@ -32,7 +32,8 @@ def engine_options(database_url: str) -> dict:
 
 
 def build_engine(database_url: str):
-    return create_engine(database_url, **engine_options(database_url))
+    # hide_parameters keeps question text and page content out of error logs.
+    return create_engine(database_url, hide_parameters=True, **engine_options(database_url))
 
 
 engine = build_engine(get_settings().database_url)

@@ -78,7 +78,7 @@ A search for the current session uses `RETRIEVAL_MIN_SCORE`. A passage from anot
 - The official MCP Python SDK
 - Qdrant and fastembed
 - OpenAI for the chat model, Tavily for search
-- Ragas 0.2.15, imported only for the optional model-judged metrics
+- Ragas 0.2.15, installed from `requirements-eval.txt` and imported only for the optional model-judged metrics
 - fpdf2 for PDF export
 - Next.js, React, and Tailwind
 
@@ -149,7 +149,7 @@ The root `.env.example` lists every variable. Environment variables override the
 - `EMBEDDING_PROVIDER` is `fastembed` or `hash`. `EMBEDDING_MODEL` is separate from `OPENAI_MODEL`.
 - `QDRANT_URL` empty means the local `.qdrant` directory. Set the URL to use a Qdrant service. Do not point the API and another process at the same local path.
 - `PROMPT_PRICE_PER_MILLION`, `COMPLETION_PRICE_PER_MILLION`, and `MAX_RUN_COST_USD` control the estimate and the cap. The estimate is not a bill.
-- `MAX_CONCURRENT_RUNS` and `MAX_RUN_STARTS` limit new research starts. A waiting review is not counted as a new start.
+- `MAX_CONCURRENT_RUNS` and `MAX_RUN_STARTS` limit new research starts. The limiter lives in the API process and is shared by every caller, not kept per client or per address. A review resume, including `research_more`, is not counted as a new start, so it is not capped by `MAX_RUN_STARTS`.
 
 On startup the API creates tables it can reach and adds missing question columns, including the token and cost columns. `database/schema.sql` is the same contract. There is no Alembic chain.
 
@@ -161,9 +161,9 @@ From the repository root, with Docker installed:
 docker compose up --build
 ```
 
-Compose starts PostgreSQL 16, Qdrant, the API, and the desk. Health checks gate the API on Postgres and Qdrant. Volumes keep the database, Qdrant storage, and the embedding cache. The desk is built with `NEXT_PUBLIC_API_URL=http://localhost:8000`, which is the URL the browser uses. Pass `OPENAI_API_KEY` and `SEARCH_API_KEY` in the shell if you want a live run. They are not copied into the image. `.env`, `explanation.txt`, virtual environments, and local databases are in `.dockerignore`.
+Compose starts PostgreSQL 16, Qdrant, the API, and the desk. Health checks gate the API on Postgres and Qdrant, and the desk on the API. The API image runs as a normal user, and Qdrant is pinned to a release the client library accepts. Volumes keep the database, Qdrant storage, and the embedding cache. The desk is built with `NEXT_PUBLIC_API_URL=http://localhost:8000`, which is the URL the browser uses. Pass `OPENAI_API_KEY` and `SEARCH_API_KEY` in the shell if you want a live run. They are not copied into the image. `.env`, `explanation.txt`, virtual environments, and local databases are in `.dockerignore`.
 
-This Compose file is the local packaging. It is not evidence that a hosted deployment was completed. See `docs/deployment.md`.
+This Compose file is the local packaging. It has not been run against a Docker daemon, and no hosted deployment was completed. See `docs/deployment.md`.
 
 ## API
 
@@ -193,7 +193,7 @@ From `backend`, with the virtual environment active:
 python -m app.evaluation
 ```
 
-The dataset has seven labelled rows: a correct claim, an incorrect claim quoted from a true sentence, contradictory sources, a passage that is too short, a retrieval time outside the freshness window, a misleading excerpt that names a figure in order to deny it, and a statistic whose number is not in the excerpt.
+The dataset has seven labelled rows: a correct claim, an incorrect claim quoted from a true sentence (the product now downgrades it, so the safe label is Insufficient evidence), contradictory sources, a passage that is too short, a retrieval time outside the freshness window, a misleading excerpt that names a figure in order to deny it, and a statistic whose number is not in the excerpt.
 
 The deterministic metrics are:
 
@@ -205,9 +205,9 @@ The deterministic metrics are:
 - **Source freshness.** The product's freshness rule matches the label for that timestamp.
 - **Statistic backing.** For a Verified or Partially supported statistic, every number in the claim appears in the excerpt.
 
-Ragas faithfulness, answer relevancy, and context precision are requested only when `OPENAI_API_KEY` is set. If the key is missing, or the library cannot be imported, the result is `ran: false` and no score is filled in. Ragas 0.2.15 is pinned because later releases need a C++ build of scikit-network on this machine. Current LangChain no longer ships a class that release imports, so `app.evaluation.ragas_eval` installs a placeholder for that import and does not call it.
+Ragas faithfulness, answer relevancy, and context precision are requested only when `OPENAI_API_KEY` is set. If the key is missing, or the library cannot be imported, the result is `ran: false` and no score is filled in. Install `pip install -r requirements-eval.txt` to get it. Ragas 0.2.15 is pinned because later releases need scikit-network, which needed a C++ compiler to build during development. Current LangChain no longer ships a class that release imports, so `app.evaluation.ragas_eval` installs a placeholder for that import and does not call it.
 
-These scores measure the curated rows and the quotation rules. A high score does not guarantee factual correctness. In particular, citation support stays high when a false claim quotes a true sentence, and statistic backing does not notice a sentence that names a number in order to deny it. The claim-verification label is what fails those rows.
+These scores measure the curated rows and the quotation rules. A high score does not guarantee factual correctness. Citation support stays high when a false claim quotes a true sentence. The product now also refuses to keep a statistic as Verified when its quotation lacks the claim's numbers, so the incorrect-claim and unsupported-statistic rows end as Insufficient evidence. The statistic-backing metric still reports the raw verdict, so it scores those rows 0. The remaining gap is the misleading-excerpt row: the quoted sentence names the figure in order to deny it, so number matching passes and claim verification scores 0. Only the deterministic metrics have produced numbers. No Ragas score has been obtained.
 
 ## Tests
 
@@ -235,10 +235,13 @@ npm test
 ## Security
 
 - Secrets belong in the environment or a local `.env`. `.env` is gitignored. Images do not copy it.
-- Health and request logs record status codes, the database dialect, and token counts. They do not record the API key, the prompt body, or the page text. Database connection failures log the exception type.
+- Logs record status codes, the database dialect, and token counts. They do not record the API key, the prompt body, or the page text. SQLAlchemy does not log bound parameters, and database connection failures log the exception type.
 - Question text is length-checked. List limits are bounded. Research ids are UUIDs. SQL is issued through SQLAlchemy parameters or fixed `ALTER` statements, not by concatenating the question into SQL.
 - New runs are limited. Model calls time out, and the OpenAI client retries once before the graph's own retry. The cost cap is not retried.
-- Web pages are untrusted. They are wrapped before they enter a prompt and cannot close that wrapper. They still cannot be allowed to override the agent instructions by any stronger guarantee than the model following that wrapper. Tool execution is the fixed MCP tool list, not code taken from a page.
+- Web pages are untrusted. They are wrapped before they enter a prompt and cannot close that wrapper, but the only protection against injected instructions is the model following that wrapper. Tool execution is the fixed MCP tool list, not code taken from a page.
+- Page fetches only go to public addresses. Every host is resolved, private, loopback, link-local, and metadata addresses are refused, and each redirect hop is checked again. A DNS answer that changes between the check and the connection is not defended against.
+- Model tokens spent in the MCP child process are returned in the tool result and added to the run, so the cost cap covers both processes.
+- A run still marked running when the API starts, other than one waiting for review, is marked failed with a message to ask again. Its in-memory work cannot be resumed.
 - Each graph thread id is the question id. Memory hits from another session are labelled and use a higher similarity bar. Export citations have to match a source saved on that session.
 - Remaining limits: there is no login, so anyone who can call the API can read saved research. The cost figure can drift from the provider bill. Prompt wrapping is not a sandbox. A quotation check does not detect sarcasm or a denial that still contains the quoted words. TLS, a real database password, and closed database ports are required on any shared host and are not configured by the local Compose file.
 
@@ -248,7 +251,7 @@ npm test
 - Verification is against collected text. A verified claim can still be false if the page is false.
 - The freshness window and the similarity floors are settings, not a judgment that a page is current or authoritative.
 - Source-quality labels are rules about the publisher, author, date, and passage. They are not a reliability score.
-- The activity log lives in the API process. A restart drops events that were not already shown. The saved rows remain.
+- The limiter and the activity log live in the API process. A restart drops events that were not already shown. The saved rows remain.
 - PDF text is written in Helvetica. Characters outside Latin-1 are replaced.
 - Ragas model-judged metrics are optional and were not given a score in an environment without an API key.
 - Docker Compose is prepared here. A public deployment was not performed or verified.

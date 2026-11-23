@@ -1,4 +1,5 @@
-from app.core.config import get_settings
+import pytest
+
 from app.research.errors import ResearchError
 from app.research.limits import RunLimiter
 from app.research.usage import assert_within_budget, record_usage, reset_usage, start_usage
@@ -30,19 +31,22 @@ def test_research_post_returns_429_when_the_start_cap_is_reached(client, monkeyp
     assert second.json()["error"]["code"] == "rate_limited"
 
 
-def test_cost_limit_is_not_retried(monkeypatch):
-    monkeypatch.setenv("MAX_RUN_COST_USD", "0")
-    get_settings.cache_clear()
+def test_a_run_slot_is_released_when_the_background_run_ends(client, monkeypatch):
+    limiter = RunLimiter(max_concurrent=1, max_starts=10, window_seconds=600)
+    monkeypatch.setattr("app.api.research.get_run_limiter", lambda: limiter)
+
+    assert client.post("/api/research", json={"question": QUESTION}).status_code == 201
+    assert client.post("/api/research", json={"question": QUESTION}).status_code == 201
+
+
+def test_cost_limit_is_not_retried(set_env):
+    set_env(MAX_RUN_COST_USD="0")
     token = start_usage()
     try:
         record_usage(1, 0)
-        try:
+        with pytest.raises(ResearchError) as raised:
             assert_within_budget()
-            raised = False
-        except ResearchError as exc:
-            raised = True
-            assert exc.retryable is False
-        assert raised is True
     finally:
         reset_usage(token)
-        get_settings.cache_clear()
+
+    assert raised.value.retryable is False

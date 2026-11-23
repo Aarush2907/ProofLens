@@ -1,5 +1,7 @@
+import re
 from urllib.parse import urlsplit, urlunsplit
 
+_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 KEPT_DISAGREEMENTS = {"factual_disagreement", "conflicting_number_or_date"}
 GROUNDED_STATUSES = {"Verified", "Partially supported"}
@@ -37,8 +39,23 @@ def normalise_status(status: str) -> str:
     return STATUS_NAMES.get(status.strip().lower(), "Insufficient evidence")
 
 
-def ground_verdict(verdict: dict, passage: str) -> dict:
-    """Downgrade a verdict whose quotation is not in the retrieved passage."""
+def numbers_in(text: str) -> set[str]:
+    return {number.replace(",", "") for number in _NUMBER.findall(text or "")}
+
+
+def statistic_is_backed(claim_text: str, excerpt: str) -> bool:
+    """Every number in a statistic claim must appear in the quoted excerpt."""
+
+    claimed = numbers_in(claim_text)
+    return bool(claimed) and claimed <= numbers_in(excerpt)
+
+
+def ground_verdict(verdict: dict, passage: str, claim_text: str = "", claim_kind: str = "") -> dict:
+    """Downgrade a verdict whose quotation is not in the retrieved passage.
+
+    For a statistic claim, a supporting quotation must also contain the
+    claim's numbers. A true sentence about a different figure is not support.
+    """
 
     status = normalise_status(verdict.get("status", ""))
     supporting = verdict.get("supporting_excerpt") or ""
@@ -51,6 +68,18 @@ def ground_verdict(verdict: dict, passage: str) -> dict:
             **grounded,
             "status": "Insufficient evidence",
             "explanation": "The checker did not quote a passage that appears in the retrieved source.",
+            "supporting_excerpt": "",
+            "opposing_excerpt": "",
+        }
+    if (
+        status in GROUNDED_STATUSES
+        and claim_kind == "statistic"
+        and not statistic_is_backed(claim_text, supporting)
+    ):
+        return {
+            **grounded,
+            "status": "Insufficient evidence",
+            "explanation": "The quoted passage does not contain the figure stated in the claim.",
             "supporting_excerpt": "",
             "opposing_excerpt": "",
         }
