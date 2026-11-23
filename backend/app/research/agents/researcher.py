@@ -7,6 +7,7 @@ from app.research.activity import emit
 from app.research.checks import canonical_url
 from app.research.contracts import SearchQueryPlan
 from app.research.errors import ResearchError
+from app.research.pages import is_block_page
 from app.research.quality import domain_of
 
 
@@ -39,6 +40,15 @@ def collect_sources(state: dict, model, search, fetch_page) -> dict:
         if not url or url in seen:
             continue
         seen.add(url)
+        if is_block_page(hit.content or hit.snippet, hit.title):
+            emit(
+                "source_skipped",
+                f"Skipped {url}. It returned a bot-challenge page, not the source text.",
+                agent="researcher",
+                detail={"url": url},
+                session_id=session_id,
+            )
+            continue
         source_id = str(uuid.uuid4())
         fetched = _read_page(
             fetch_page,
@@ -49,7 +59,8 @@ def collect_sources(state: dict, model, search, fetch_page) -> dict:
             session_id=session_id,
         )
         text, reused, outdated = _page_fields(fetched)
-        content = text if len(text) >= 200 else (hit.content or hit.snippet)
+        snippet_only = len(text) < 200
+        content = (hit.content or hit.snippet) if snippet_only else text
         retrieved_at = datetime.now(timezone.utc).isoformat()
         if isinstance(fetched, dict) and fetched.get("retrieved_at"):
             retrieved_at = fetched["retrieved_at"]
@@ -67,11 +78,13 @@ def collect_sources(state: dict, model, search, fetch_page) -> dict:
                 "author": hit.author or "",
             }
         )
-        detail = {"url": url, "reused": reused, "possibly_outdated": outdated}
+        detail = {"url": url, "reused": reused, "possibly_outdated": outdated, "snippet_only": snippet_only}
         if reused and outdated:
             message = f"Reused an older stored copy of {hit.title or url}. It may be outdated."
         elif reused:
             message = f"Reused a stored copy of {hit.title or url}."
+        elif snippet_only:
+            message = f"Source discovered: {hit.title or url}. The full page could not be read, so the search-result text is used."
         else:
             message = f"Source discovered: {hit.title or url}."
         emit("source_discovered", message, agent="researcher", detail=detail, session_id=session_id)

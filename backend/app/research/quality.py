@@ -54,6 +54,9 @@ def assess_source(source: dict) -> dict:
         reasons.append(f"A publication date was retrieved: {published}.")
     else:
         reasons.append("No publication date was retrieved, so recency cannot be judged from this record.")
+    snippet = (source.get("snippet") or "").strip()
+    if snippet and passage.strip() == snippet:
+        reasons.append("Only the search-result snippet was available, not the full page.")
     specific = len(passage.split()) >= 40
     if specific:
         reasons.append("The retrieved text is long enough to quote a specific passage.")

@@ -10,6 +10,25 @@ logger = logging.getLogger(__name__)
 MAX_PAGE_BYTES = 400_000
 MAX_REDIRECTS = 3
 
+# Text that bot-protection and error pages show instead of the article. A real
+# article can mention a captcha, so these only count on a short page or title.
+BLOCK_MARKERS = (
+    "just a moment",
+    "one moment, please",
+    "please wait while your request",
+    "checking if the site connection is secure",
+    "checking your browser",
+    "enable javascript and cookies",
+    "ray id",
+    "attention required",
+    "access denied",
+    "verify you are human",
+    "are you a robot",
+    "unusual traffic",
+    "request blocked",
+)
+BLOCK_PAGE_MAX_CHARS = 800
+
 
 class PageText(HTMLParser):
     def __init__(self):
@@ -36,6 +55,16 @@ def text_from_html(raw: str) -> str:
     return " ".join(" ".join(parser.parts).split())
 
 
+def is_block_page(text: str, title: str = "") -> bool:
+    """True for a bot-challenge or error page that is not the source itself."""
+
+    heading = (title or "").strip().lower()
+    if any(heading.startswith(marker) for marker in BLOCK_MARKERS):
+        return True
+    body = " ".join((text or "").split()).lower()
+    return len(body) <= BLOCK_PAGE_MAX_CHARS and any(marker in body for marker in BLOCK_MARKERS)
+
+
 def fetch_page_text(url: str, limit: int) -> str:
     try:
         page = _download(url)
@@ -46,6 +75,9 @@ def fetch_page_text(url: str, limit: int) -> str:
         return ""
     raw, content_type = page
     text = text_from_html(raw) if "html" in content_type else " ".join(raw.split())
+    if is_block_page(text):
+        logger.warning("A source page returned a bot-challenge page instead of its text")
+        return ""
     return text[:limit]
 
 
@@ -62,7 +94,13 @@ def _download(url: str) -> tuple[str, str] | None:
             current,
             timeout=8,
             follow_redirects=False,
-            headers={"User-Agent": "ProofLens research desk"},
+            headers={
+                # Identifies the client honestly. The "compatible" form is the usual
+                # convention and is accepted by more sites than a bare name.
+                "User-Agent": "Mozilla/5.0 (compatible; ProofLens/0.5; research desk)",
+                "Accept": "text/html,text/plain;q=0.9,*/*;q=0.5",
+                "Accept-Language": "en",
+            },
         ) as response:
             if response.is_redirect:
                 location = response.headers.get("location", "")

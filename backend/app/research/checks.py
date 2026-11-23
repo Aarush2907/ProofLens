@@ -149,6 +149,11 @@ def filter_report(report: dict, sources: list[dict], verifications: list[dict]) 
         for item in verifications
         if item.get("status") == "Verified"
     }
+    backed_urls = verified_urls | {
+        canonical_url(item.get("source_url", ""))
+        for item in verifications
+        if item.get("status") == "Partially supported"
+    }
     findings = []
     limitations = [item.strip() for item in report.get("limitations") or [] if item and item.strip()]
     for finding in report.get("findings") or []:
@@ -165,6 +170,8 @@ def filter_report(report: dict, sources: list[dict], verifications: list[dict]) 
             continue
         certainty = finding.get("certainty") or "uncertain"
         if certainty == "supported" and not any(url in verified_urls for url in citations):
+            certainty = "uncertain"
+        if certainty == "partial" and not any(url in backed_urls for url in citations):
             certainty = "uncertain"
         findings.append({"text": text, "citation_urls": citations, "certainty": certainty})
 

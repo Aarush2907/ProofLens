@@ -236,9 +236,9 @@ What the run showed:
 
 - The stack works end to end on real services: search, page text, claim extraction, verification, the review pause, the report, the evidence graph, and both exports.
 - A Verified label means the saved text states the claim. All five sources were career-advice or recruiting pages (four classed secondary, one with incomplete primary-source signals), so the verified figures such as "13% interview conversion" are statistics those pages repeat. The run did not show that the figures are true.
-- For four of the five sources the stored text is identical to the search-result snippet, at most 1,000 characters. Only the university page has longer fetched text. Verification for those four was against search-result text, not the full page.
-- One saved source is a Cloudflare error page ("Just a moment..." from indeed.com, 111 characters). No claim was taken from it, but it still sits in the source list and the bibliography. A page like that should be filtered out before it is stored, and that is not done yet.
-- The "Tuesday to Thursday" finding is labelled partly supported although both claims taken from its cited source were checked as Insufficient evidence. The finding label is the writer's, and the app only downgrades a "supported" label that has no verified claim behind it.
+- For four of the five sources the stored text is identical to the search-result snippet, at most 1,000 characters. Only the university page has longer fetched text. Verification for those four was against search-result text, not the full page. Sites that block automated requests are the likely reason, but the run did not record why each fetch failed. Since this run, a source that has only a snippet says so in its quality notes and in the activity log, and the page fetch sends a more widely accepted user agent. Blocked sites will still fall back to the snippet.
+- One saved source is a Cloudflare error page ("Just a moment..." from indeed.com, 111 characters). No claim was taken from it, but it sits in the source list and the bibliography. This run predates a fix: a short result or page that matches bot-challenge wording is now skipped before it is stored, with an activity message. The saved sample run was not re-run, so it still shows the old behaviour.
+- The "Tuesday to Thursday" finding is labelled partly supported although both claims taken from its cited source were checked as Insufficient evidence. This run predates a fix: a partly supported finding now needs a cited source with at least one Verified or Partially supported claim, and is otherwise shown as uncertain.
 
 Not run: the curated evaluation (`python -m app.evaluation`) was not run against this stack, and no Ragas score exists. This was a single run, so it says nothing about accuracy or speed in general.
 ## Tests
@@ -249,7 +249,7 @@ Backend, from `backend`:
 pytest
 ```
 
-At the last run the backend suite had 89 passing tests and 1 skipped (the live test), and the frontend had 18 passing tests. The suite uses in-memory SQLite, in-memory Qdrant, the hashing embedder, and stand-ins for search and the model. It covers the API, the agents, the graph, the database contract, MCP, retrieval, export, the cost and start limits, and the curated evaluation. One live test is marked `e2e` and skips without both API keys.
+At the last run the backend suite had 94 passing tests and 1 skipped (the live test), and the frontend had 18 passing tests. The suite uses in-memory SQLite, in-memory Qdrant, the hashing embedder, and stand-ins for search and the model. It covers the API, the agents, the graph, the database contract, MCP, retrieval, export, the cost and start limits, and the curated evaluation. One live test is marked `e2e` and skips without both API keys.
 
 ```powershell
 pytest -m e2e
@@ -286,7 +286,7 @@ npm test
 - The limiter and the activity log live in the API process. A restart drops events that were not already shown. The saved rows remain.
 - PDF text is written in Helvetica. Characters outside Latin-1 are replaced.
 - Ragas model-judged metrics are optional, and no Ragas score has been produced yet.
-- Bot-challenge and error pages from a site can be stored as sources. Search snippets can stand in for page text when the page is not fetched.
+- Bot-challenge detection is a list of wording markers, so an unusual block page can still get through. Search snippets stand in for page text when a page cannot be fetched, and the source is marked when that happens.
 - Docker Compose was started and used on one Windows machine. A public deployment was not performed or verified.
 
 ## Further work
