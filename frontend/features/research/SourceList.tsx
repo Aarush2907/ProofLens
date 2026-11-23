@@ -1,3 +1,4 @@
+import { formatSavedAt } from "@/lib/format";
 import type { ResearchSource } from "@/types/api";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -13,12 +14,13 @@ export function SourceList({ sources }: { sources: ResearchSource[] }) {
 
   return (
     <ul className="space-y-3">
-      {sources.map((source) => {
+      {sources.map((source, index) => {
         const passage = source.content.trim();
         const showPassage = passage.length > 0 && passage !== source.snippet.trim();
         return (
-          <li key={source.id} className="rounded-2xl border border-line bg-panel px-5 py-4">
+          <li key={source.id} id={`source-${index + 1}`} className="scroll-mt-6 rounded-2xl border border-line bg-panel px-5 py-4">
             <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-raised px-2 py-0.5 text-xs text-foreground">[{index + 1}]</span>
               <span className="rounded-full border border-brass/40 px-2 py-0.5 text-[11px] uppercase tracking-wide text-brass">
                 {ROLE_LABEL[source.quality.role] ?? source.quality.role}
               </span>
@@ -32,7 +34,7 @@ export function SourceList({ sources }: { sources: ResearchSource[] }) {
               {source.author || "Author not retrieved"}
               <span aria-hidden="true"> · </span>
               {source.published_on || "Publication date not retrieved"}
-              {source.retrieved_at ? <span> · Retrieved {source.retrieved_at}</span> : null}
+              {source.retrieved_at ? <span> · Retrieved {formatSavedAt(source.retrieved_at)}</span> : null}
             </p>
             {source.search_query ? <p className="mt-2 text-xs text-muted">Search query: {source.search_query}</p> : null}
             {source.snippet ? <p className="mt-3 text-sm leading-6 text-foreground">{source.snippet}</p> : null}

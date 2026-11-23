@@ -31,6 +31,20 @@ export function SessionView({ id }: { id: string }) {
     return null;
   }
 
+  const finished = session.report !== null;
+  const reportView = (
+    <ReportView report={session.report} questionId={session.id} claims={session.claims} sources={session.sources} />
+  );
+  const sections = [
+    ...(finished ? [{ id: "report", label: "Report" }] : [{ id: "activity", label: "Activity" }]),
+    ...(session.stage === "awaiting_review" ? [{ id: "review", label: "Review" }] : []),
+    { id: "claims", label: `Claims (${session.claims.length})` },
+    { id: "contradictions", label: "Disagreements" },
+    { id: "sources", label: `Sources (${session.sources.length})` },
+    { id: "evidence-graph", label: "Evidence graph" },
+    ...(finished ? [{ id: "activity-log", label: "Activity" }] : [{ id: "report", label: "Report" }]),
+  ];
+
   return (
     <div className="space-y-10">
       <div>
@@ -62,37 +76,67 @@ export function SessionView({ id }: { id: string }) {
             {session.error_message}
           </p>
         ) : null}
-        <nav className="mt-6 flex flex-wrap gap-4 text-sm text-brass">
-          <a href="#activity">Activity</a>
-          {session.stage === "awaiting_review" ? <a href="#review">Review</a> : null}
-          <a href="#evidence-graph">Evidence graph</a>
-          <a href="#sources">Sources</a>
-          <a href="#claims">Claims</a>
-          <a href="#report">Report</a>
+        <nav className="mt-6 flex flex-wrap gap-2 text-sm">
+          {sections.map((item) => (
+            <a
+              key={item.id}
+              href={`#${item.id}`}
+              className="rounded-full border border-line px-3 py-1 text-muted transition-colors hover:border-brass/50 hover:text-brass"
+            >
+              {item.label}
+            </a>
+          ))}
         </nav>
       </div>
 
-      <ActivityPanel sessionId={session.id} />
-      <ReviewPanel session={session} onSubmitted={reload} />
-      <Section title="Evidence graph" id="evidence-graph">
-        <EvidenceGraphView sessionId={session.id} refreshKey={`${session.stage}:${session.updated_at}`} />
-      </Section>
-      <Section title="Sources" id="sources">
-        <SourceList sources={session.sources} />
-      </Section>
-      <Section title="Claims and verification" id="claims">
-        <ClaimList claims={session.claims} />
-      </Section>
-      <Section title="Contradictions">
-        <ContradictionList items={session.contradictions} />
-      </Section>
-      <Section title="Report" id="report">
-        <ReportView report={session.report} questionId={session.id} />
-      </Section>
+      {finished ? (
+        <>
+          <Section title="Report" id="report">
+            {reportView}
+          </Section>
+          <Section title="Claims and verification" id="claims">
+            <ClaimList claims={session.claims} sources={session.sources} />
+          </Section>
+          <Section title="Where sources disagree" id="contradictions">
+            <ContradictionList items={session.contradictions} />
+          </Section>
+          <Section title="Sources" id="sources">
+            <SourceList sources={session.sources} />
+          </Section>
+          <Section title="Evidence graph" id="evidence-graph">
+            <EvidenceGraphView sessionId={session.id} refreshKey={`${session.stage}:${session.updated_at}`} />
+          </Section>
+          <details id="activity-log" className="rounded-2xl border border-line px-5 py-4">
+            <summary className="cursor-pointer font-serif text-xl text-foreground">Agent activity log</summary>
+            <div className="mt-4">
+              <ActivityPanel sessionId={session.id} />
+            </div>
+          </details>
+        </>
+      ) : (
+        <>
+          <ActivityPanel sessionId={session.id} />
+          <ReviewPanel session={session} onSubmitted={reload} />
+          <Section title="Claims and verification" id="claims">
+            <ClaimList claims={session.claims} sources={session.sources} />
+          </Section>
+          <Section title="Where sources disagree" id="contradictions">
+            <ContradictionList items={session.contradictions} />
+          </Section>
+          <Section title="Sources" id="sources">
+            <SourceList sources={session.sources} />
+          </Section>
+          <Section title="Evidence graph" id="evidence-graph">
+            <EvidenceGraphView sessionId={session.id} refreshKey={`${session.stage}:${session.updated_at}`} />
+          </Section>
+          <Section title="Report" id="report">
+            {reportView}
+          </Section>
+        </>
+      )}
     </div>
   );
 }
-
 function Section({ title, id, children }: { title: string; id?: string; children: ReactNode }) {
   return (
     <section id={id} className="space-y-4">

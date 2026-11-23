@@ -1,119 +1,125 @@
 """Markdown and PDF exports built only from a saved research session.
 
-Citation URLs that are not among the saved sources are left out. The export
-can be downloaded before the writer finishes, and it says so.
+Both formats are rendered from the same list of blocks, so they always say
+the same thing. Sources are numbered, and claims and findings point to those
+numbers. A citation URL that is not among the saved sources is left out. The
+export can be downloaded before the writer finishes, and it says so.
 """
 
-from app.research.checks import canonical_url
-from app.schemas.research import ResearchSessionRead
+from datetime import datetime, timezone
+from typing import NamedTuple
 
-CLAIM_GROUPS = (
-    ("Verified", "verified"),
-    ("Partially supported", "partial"),
-    ("Contradicted", "contradicted"),
-    ("Insufficient evidence", "insufficient"),
+from app.research.checks import canonical_url
+from app.schemas.research import ClaimRead, ResearchSessionRead, SourceRead
+
+VERDICTS = (
+    ("Verified", "A saved passage states this claim directly."),
+    ("Partially supported", "A saved passage supports only part of the claim."),
+    ("Contradicted", "A saved passage conflicts with the claim."),
+    ("Insufficient evidence", "The collected passages do not settle this claim."),
 )
+
+ROLE_LABEL = {
+    "primary": "Primary-style source",
+    "secondary": "Secondary or unidentified",
+    "unclear": "Incomplete primary-source signals",
+}
+
+CERTAINTY_LABEL = {
+    "supported": "Supported by a verified claim",
+    "partial": "Partly supported",
+    "uncertain": "Uncertain",
+}
+
+REVIEW_LABEL = {
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "pending": "Not reviewed",
+}
+
+STATUS_LABEL = {
+    "completed": "Completed",
+    "failed": "Failed",
+    "running": "In progress",
+    "submitted": "Saved, not started",
+}
+
+
+class Block(NamedTuple):
+    kind: str  # title, h2, h3, claim, link, para, note, facts, table, bullet, item, quote
+    text: str = ""
+    url: str = ""
+    rows: tuple = ()
 
 
 def render_markdown(session: ResearchSessionRead) -> str:
-    lines = ["# ProofLens research report", ""]
-    for title, body in build_sections(build_document(session)):
-        lines.append(f"## {title}")
-        lines.append("")
-        lines.extend(body)
-        lines.append("")
+    lines: list[str] = []
+    for block in build_blocks(session):
+        new = _markdown_lines(block)
+        if lines and lines[-1].startswith("- ") and not new[0].startswith("- "):
+            lines.append("")
+        lines.extend(new)
     return "\n".join(lines).rstrip() + "\n"
 
 
 def render_pdf(session: ResearchSessionRead) -> bytes:
     from fpdf import FPDF
 
-    pdf = FPDF()
+    class Document(FPDF):
+        def footer(self) -> None:
+            self.set_y(-12)
+            self.set_font("Helvetica", size=8)
+            self.set_text_color(120, 120, 120)
+            self.cell(0, 6, f"ProofLens research report - page {self.page_no()}", align="C")
+
+    pdf = Document()
     pdf.set_auto_page_break(auto=True, margin=16)
+    pdf.set_margins(18, 16, 18)
     pdf.add_page()
-    _write(pdf, 16, 8, "ProofLens research report")
-    pdf.ln(2)
-    for title, body in build_sections(build_document(session)):
-        _write(pdf, 12, 7, title)
-        _write(pdf, 10, 5, "\n".join(body))
-        pdf.ln(2)
+    for block in build_blocks(session):
+        _draw(pdf, block)
     return bytes(pdf.output())
 
 
-def build_sections(document: dict) -> list[tuple[str, list[str]]]:
-    return [
-        ("Research question", [document["question"]]),
-        ("Executive summary", [document["summary"]]),
-        ("Methodology", [document["methodology"]]),
-        ("Important findings", _findings(document["findings"])),
-        ("Verified claims", _claims(document["verified"])),
-        ("Partially supported claims", _claims(document["partial"])),
-        ("Contradicted claims", _claims(document["contradicted"])),
-        ("Insufficient evidence", _claims(document["insufficient"])),
-        ("Rejected in review", _claims(document["rejected"])),
-        ("Supporting sources", _or_none(document["supporting_sources"])),
-        ("Opposing sources", _or_none(document["opposing_sources"])),
-        ("Contradiction summary", document["contradictions"] or ["No contradiction was saved."]),
-        ("Limitations", document["limitations"]),
-        ("Source bibliography", document["bibliography"] or ["No source was saved."]),
+def build_blocks(session: ResearchSessionRead) -> list[Block]:
+    sources = {canonical_url(source.url): source for source in session.sources if canonical_url(source.url)}
+    numbers = {url: index for index, url in enumerate(sources, start=1)}
+    groups = group_claims(session.claims)
+
+    blocks = [
+        Block("title", "ProofLens research report"),
+        Block("para", session.question),
+        Block("facts", rows=_facts(session)),
+        Block("h2", "Summary"),
+        Block("para", _summary(session)),
+        Block("h2", "How this run was done"),
+        Block("para", describe_method(session)),
+        Block("h2", "Verdicts at a glance"),
+        Block("table", rows=tuple((status, str(len(groups[status]))) for status, _meaning in VERDICTS)),
     ]
+    if groups["Rejected in review"]:
+        blocks.append(Block("note", f"{len(groups['Rejected in review'])} claim(s) were rejected in review and are listed separately."))
+
+    blocks += _findings(session, sources, numbers)
+    blocks += _claim_sections(groups, session, sources, numbers)
+    blocks += _contradictions(session, numbers)
+    blocks += _notes(session)
+    blocks += _bibliography(session.sources, numbers)
+    blocks += _guide()
+    blocks.append(Block("note", f"Generated by ProofLens on {_when(datetime.now(timezone.utc))}."))
+    return blocks
 
 
-def build_document(session: ResearchSessionRead) -> dict:
-    known = {canonical_url(source.url): source for source in session.sources if canonical_url(source.url)}
-    groups: dict[str, list[dict]] = {key: [] for _status, key in CLAIM_GROUPS}
-    groups["rejected"] = []
-    supporting: set[str] = set()
-    opposing: set[str] = set()
-    status_keys = dict(CLAIM_GROUPS)
-    for claim in session.claims:
-        entry = {"text": claim.text, "url": claim.source_url}
+def group_claims(claims: list[ClaimRead]) -> dict[str, list[ClaimRead]]:
+    groups: dict[str, list[ClaimRead]] = {status: [] for status, _meaning in VERDICTS}
+    groups["Rejected in review"] = []
+    for claim in claims:
         if claim.review_status == "rejected":
-            groups["rejected"].append(entry)
+            groups["Rejected in review"].append(claim)
             continue
         status = claim.verification.status if claim.verification else "Insufficient evidence"
-        groups[status_keys.get(status, "insufficient")].append(entry)
-        for item in claim.evidence:
-            url = canonical_url(item.source_url)
-            if url not in known:
-                continue
-            (supporting if item.stance == "supporting" else opposing).add(url)
-
-    summary = "The writer has not finished a report for this run. The sections below are the evidence saved so far."
-    limitations = [
-        "A passage check shows whether the collected text supports the claim. It does not prove the claim is true outside that text.",
-    ]
-    findings = []
-    if session.report is not None:
-        summary = session.report.summary or summary
-        limitations.extend(session.report.limitations)
-        findings = [
-            {
-                "text": finding.text,
-                "certainty": finding.certainty,
-                "citation_urls": [
-                    known[canonical_url(url)].url for url in finding.citation_urls if canonical_url(url) in known
-                ],
-            }
-            for finding in session.report.findings
-        ]
-
-    return {
-        "question": session.question,
-        "summary": summary,
-        "methodology": describe_method(session),
-        "findings": findings,
-        **groups,
-        "supporting_sources": [_source_line(known[url]) for url in sorted(supporting)],
-        "opposing_sources": [_source_line(known[url]) for url in sorted(opposing)],
-        "contradictions": [
-            f"{item.claim_text} ({item.source_url}) disagrees with {item.other_claim_text} "
-            f"({item.other_source_url}). {item.explanation}"
-            for item in session.contradictions
-        ],
-        "limitations": limitations,
-        "bibliography": [_source_line(source) for source in session.sources],
-    }
+        groups.get(status, groups["Insufficient evidence"]).append(claim)
+    return groups
 
 
 def describe_method(session: ResearchSessionRead) -> str:
@@ -146,33 +152,304 @@ def describe_method(session: ResearchSessionRead) -> str:
     return " ".join(steps)
 
 
-def _findings(findings: list[dict]) -> list[str]:
-    if not findings:
-        return ["No finding with a saved citation was available."]
-    lines = []
-    for finding in findings:
-        cites = ", ".join(finding["citation_urls"]) or "no saved citation"
-        lines.append(f"- {finding['text']} ({finding['certainty']}; {cites})")
-    return lines
+def _facts(session: ResearchSessionRead) -> tuple:
+    status = STATUS_LABEL.get(session.status, session.status)
+    if session.stage == "awaiting_review":
+        status = "Waiting for review"
+    rows = [
+        ("Run", str(session.id)),
+        ("Status", status),
+        ("Started", _when(session.created_at)),
+        ("Last saved", _when(session.updated_at)),
+        ("Sources", str(len(session.sources))),
+        ("Claims", str(len(session.claims))),
+    ]
+    if session.estimated_cost_usd:
+        tokens = session.prompt_tokens + session.completion_tokens
+        rows.append(("Model use", f"{tokens:,} tokens, about ${session.estimated_cost_usd:.4f} (an estimate, not a bill)"))
+    return tuple(rows)
 
 
-def _claims(claims: list[dict]) -> list[str]:
-    if not claims:
-        return ["None saved."]
-    return [f"- {claim['text']} ({claim['url']})" for claim in claims]
+def _summary(session: ResearchSessionRead) -> str:
+    if session.report is not None and session.report.summary:
+        return session.report.summary
+    return "The writer has not finished a report for this run. The sections below are the evidence saved so far."
 
 
-def _or_none(lines: list[str]) -> list[str]:
-    return lines or ["None saved."]
+def _findings(session, sources, numbers) -> list[Block]:
+    if session.report is None:
+        return []
+    blocks = [Block("h2", "Key findings")]
+    if not session.report.findings:
+        blocks.append(Block("para", "No finding with a saved citation was available."))
+    for index, finding in enumerate(session.report.findings, start=1):
+        cited = [canonical_url(url) for url in finding.citation_urls if canonical_url(url) in sources]
+        blocks.append(Block("item", f"{index}. {finding.text}"))
+        label = CERTAINTY_LABEL.get(finding.certainty, finding.certainty)
+        refs = ", ".join(f"[{numbers[url]}]" for url in cited) or "no saved citation"
+        blocks.append(Block("note", f"Confidence: {label}. Sources: {refs}."))
+    return blocks
 
 
-def _source_line(source) -> str:
-    return f"{source.title or source.url} - {source.url}"
+def _claim_sections(groups, session, sources, numbers) -> list[Block]:
+    if not session.claims:
+        return [Block("h2", "Claims and evidence"), Block("para", "No claim was saved for this run.")]
+    blocks = [Block("h2", "Claims and evidence")]
+    position = 0
+    for status, meaning in VERDICTS:
+        claims = groups[status]
+        if not claims:
+            continue
+        blocks.append(Block("h3", f"{status} ({len(claims)})"))
+        blocks.append(Block("note", meaning))
+        for claim in claims:
+            position += 1
+            blocks += _claim_blocks(position, claim, sources, numbers)
+    rejected = groups["Rejected in review"]
+    if rejected:
+        blocks.append(Block("h3", f"Rejected in review ({len(rejected)})"))
+        blocks.append(Block("note", "A person removed these claims, so the report does not rely on them."))
+        for claim in rejected:
+            position += 1
+            blocks.append(Block("item", f"{position}. {claim.text} {_cite(claim.source_url, sources, numbers)}"))
+    return blocks
 
 
-def _write(pdf, size: int, line_height: int, text: str) -> None:
+def _claim_blocks(position: int, claim: ClaimRead, sources, numbers) -> list[Block]:
+    blocks = [Block("claim", f"{position}. {claim.text}")]
+    details = [
+        f"Source: {_cite(claim.source_url, sources, numbers)}",
+        f"Type: {claim.kind}",
+        f"Review: {REVIEW_LABEL.get(claim.review_status, claim.review_status)}",
+    ]
+    for line in details:
+        blocks.append(Block("bullet", line))
+    verification = claim.verification
+    if verification is None:
+        blocks.append(Block("bullet", "Check: not checked yet."))
+        return blocks
+    if verification.explanation:
+        blocks.append(Block("bullet", f"Why: {verification.explanation}"))
+    if verification.supporting_excerpt:
+        blocks.append(Block("quote", f"Supporting quotation: {verification.supporting_excerpt}"))
+    if verification.opposing_excerpt:
+        blocks.append(Block("quote", f"Conflicting quotation: {verification.opposing_excerpt}"))
+    return blocks
+
+
+def _contradictions(session, numbers) -> list[Block]:
+    blocks = [Block("h2", "Where sources disagree")]
+    if not session.contradictions:
+        return blocks + [Block("para", "No disagreement between sources was saved.")]
+    for index, item in enumerate(session.contradictions, start=1):
+        blocks.append(Block("h3", f"Disagreement {index}"))
+        blocks.append(Block("para", item.explanation))
+        if item.context:
+            blocks.append(Block("note", item.context))
+        blocks.append(Block("quote", f"{item.claim_text} {_ref(item.source_url, numbers)}"))
+        blocks.append(Block("quote", f"{item.other_claim_text} {_ref(item.other_source_url, numbers)}"))
+    return blocks
+
+
+def _notes(session) -> list[Block]:
+    uncertainties = list(session.report.uncertainties) if session.report else []
+    limitations = [
+        "A passage check shows whether the collected text supports the claim. It does not prove the claim is true outside that text.",
+    ]
+    if session.report:
+        limitations.extend(session.report.limitations)
+    blocks = []
+    if uncertainties:
+        blocks.append(Block("h2", "What remains uncertain"))
+        blocks += [Block("bullet", item) for item in uncertainties]
+    blocks.append(Block("h2", "Limitations"))
+    blocks += [Block("bullet", item) for item in limitations]
+    return blocks
+
+
+def _bibliography(sources: list[SourceRead], numbers) -> list[Block]:
+    blocks = [Block("h2", "Sources")]
+    if not sources:
+        return blocks + [Block("para", "No source was saved.")]
+    for source in sources:
+        number = numbers.get(canonical_url(source.url), "?")
+        role = ROLE_LABEL.get(source.quality.role, source.quality.role)
+        blocks.append(Block("h3", f"[{number}] {source.title or source.url}"))
+        blocks.append(Block("link", source.url, url=source.url))
+        facts = [
+            ("Site", source.domain or source.quality.publisher or "not retrieved"),
+            ("Source type", role),
+            ("Author", source.author or "not retrieved"),
+            ("Published", source.published_on or "not retrieved"),
+            ("Retrieved", _when(source.retrieved_at) if source.retrieved_at else "not recorded"),
+        ]
+        if source.search_query:
+            facts.append(("Found with search", source.search_query))
+        blocks.append(Block("facts", rows=tuple(facts)))
+        for reason in source.quality.reasons:
+            blocks.append(Block("bullet", reason))
+        if source.snippet:
+            blocks.append(Block("quote", source.snippet.strip()[:400]))
+    return blocks
+
+
+def _guide() -> list[Block]:
+    blocks = [Block("h2", "How to read this report")]
+    blocks += [Block("bullet", f"{status}: {meaning}") for status, meaning in VERDICTS]
+    blocks.append(
+        Block(
+            "para",
+            "A verdict describes the collected passages only. A page can be wrong, so a Verified claim is "
+            "not a guarantee that the claim is true.",
+        )
+    )
+    return blocks
+
+
+def _cite(url: str, sources, numbers) -> str:
+    key = canonical_url(url)
+    source = sources.get(key)
+    if source is None:
+        return "source not among the saved sources"
+    return f"[{numbers[key]}] {source.title or source.url}"
+
+
+def _ref(url: str, numbers) -> str:
+    number = numbers.get(canonical_url(url))
+    return f"[{number}]" if number else ""
+
+
+def _when(moment: datetime | None) -> str:
+    if moment is None:
+        return "not recorded"
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+
+
+def _markdown_lines(block: Block) -> list[str]:
+    if block.kind == "title":
+        return [f"# {block.text}", ""]
+    if block.kind == "h2":
+        return [f"## {block.text}", ""]
+    if block.kind == "h3":
+        return [f"### {block.text}", ""]
+    if block.kind == "claim":
+        return [f"#### {block.text}", ""]
+    if block.kind == "link":
+        return [f"<{block.url}>", ""]
+    if block.kind == "para":
+        return [block.text, ""]
+    if block.kind == "note":
+        return [f"*{block.text}*", ""]
+    if block.kind == "bullet":
+        return [f"- {block.text}"]
+    if block.kind == "item":
+        return [block.text, ""]
+    if block.kind == "quote":
+        return [f"> {block.text}", ""]
+    if block.kind == "facts":
+        lines = ["| Detail | Value |", "| --- | --- |"]
+        lines += [f"| {label} | {_cell(value)} |" for label, value in block.rows]
+        return lines + [""]
+    if block.kind == "table":
+        lines = ["| Verdict | Claims |", "| --- | ---: |"]
+        lines += [f"| {label} | {value} |" for label, value in block.rows]
+        return lines + [""]
+    return [block.text, ""]
+
+
+def _cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")
+
+
+def _draw(pdf, block: Block) -> None:
+    width = pdf.w - pdf.l_margin - pdf.r_margin
     pdf.set_x(pdf.l_margin)
-    pdf.set_font("Helvetica", size=size)
-    # Core fonts are Latin-1 only. Other characters become "?" instead of failing.
-    safe = text.encode("latin-1", "replace").decode("latin-1")
-    pdf.multi_cell(0, line_height, safe, new_x="LMARGIN", new_y="NEXT")
+    if block.kind == "title":
+        _text(pdf, block.text, "B", 20, 9, (20, 30, 45))
+        pdf.set_draw_color(180, 140, 80)
+        pdf.set_line_width(0.6)
+        pdf.line(pdf.l_margin, pdf.get_y() + 1, pdf.l_margin + width, pdf.get_y() + 1)
+        pdf.ln(4)
+    elif block.kind == "h2":
+        pdf.ln(4)
+        _text(pdf, block.text, "B", 14, 7, (20, 30, 45))
+        pdf.set_draw_color(215, 215, 215)
+        pdf.set_line_width(0.2)
+        pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + width, pdf.get_y())
+        pdf.ln(2)
+    elif block.kind in {"h3", "claim"}:
+        pdf.ln(2)
+        _text(pdf, block.text, "B", 11, 6, (30, 40, 55))
+    elif block.kind == "link":
+        _text(pdf, block.text, "U", 8.5, 4.6, (30, 90, 160), link=block.url)
+    elif block.kind == "para":
+        _text(pdf, block.text, "", 10, 5.2, (40, 40, 40))
+        pdf.ln(1.5)
+    elif block.kind == "note":
+        _text(pdf, block.text, "I", 9, 4.8, (110, 110, 110))
+        pdf.ln(1)
+    elif block.kind == "bullet":
+        pdf.set_x(pdf.l_margin + 3)
+        _text(pdf, "- " + block.text, "", 10, 5.2, (40, 40, 40), indent=3)
+    elif block.kind == "item":
+        pdf.set_x(pdf.l_margin + 3)
+        _text(pdf, block.text, "", 10, 5.2, (40, 40, 40), indent=3)
+    elif block.kind == "quote":
+        top = pdf.get_y()
+        _text(pdf, block.text, "I", 9.5, 5, (70, 70, 70), indent=6)
+        pdf.set_draw_color(200, 160, 100)
+        pdf.set_line_width(0.6)
+        pdf.line(pdf.l_margin + 2, top, pdf.l_margin + 2, pdf.get_y())
+        pdf.ln(1.5)
+    elif block.kind in {"facts", "table"}:
+        label_width = 38 if block.kind == "facts" else 70
+        for label, value in block.rows:
+            pdf.set_x(pdf.l_margin)
+            start = pdf.get_y()
+            pdf.set_font("Helvetica", "B", 9.5)
+            pdf.set_text_color(90, 90, 90)
+            pdf.multi_cell(label_width, 5.2, _latin(label), new_x="RIGHT", new_y="TOP")
+            pdf.set_font("Helvetica", "", 9.5)
+            pdf.set_text_color(30, 30, 30)
+            pdf.set_xy(pdf.l_margin + label_width, start)
+            pdf.multi_cell(width - label_width, 5.2, _latin(value), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
+    else:
+        _text(pdf, block.text, "", 10, 5.2, (40, 40, 40))
+
+
+def _text(pdf, text: str, style: str, size: float, height: float, colour, indent: float = 0, link: str = "") -> None:
+    pdf.set_x(pdf.l_margin + indent)
+    pdf.set_font("Helvetica", style, size)
+    pdf.set_text_color(*colour)
+    pdf.multi_cell(
+        pdf.w - pdf.l_margin - pdf.r_margin - indent,
+        height,
+        _latin(text),
+        new_x="LMARGIN",
+        new_y="NEXT",
+        link=link or "",
+    )
+
+
+_REPLACEMENTS = {
+    "\u2014": "-",
+    "\u2013": "-",
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201c": '"',
+    "\u201d": '"',
+    "\u2026": "...",
+    "\u2022": "-",
+    "\u2192": "->",
+}
+
+
+def _latin(text: str) -> str:
+    # Core PDF fonts are Latin-1 only. Common punctuation is mapped, and
+    # anything else becomes "?" instead of failing the download.
+    for source, target in _REPLACEMENTS.items():
+        text = text.replace(source, target)
+    return text.encode("latin-1", "replace").decode("latin-1")
