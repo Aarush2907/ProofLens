@@ -16,6 +16,10 @@ export class ApiError extends Error {
   }
 }
 
+export function exportHref(id: string, kind: "md" | "pdf"): string {
+  return `${apiUrl()}/api/research/${id}/export.${kind}`;
+}
+
 export function apiUrl(): string {
   const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (configured) {

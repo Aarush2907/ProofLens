@@ -13,6 +13,7 @@ from app.research.errors import ResearchError
 from app.research.index import get_index
 from app.research.model import parse_model
 from app.research.pages import fetch_page_text
+from app.research.safety import DATA_RULE, untrusted
 from app.research.search import search_web as search_provider
 
 EXTRACT_SYSTEM = (
@@ -20,7 +21,8 @@ EXTRACT_SYSTEM = (
     "Copy source_url from the sources. "
     "Use kind opinion for judgments and predictions. "
     "Use fact, statistic, or date for statements a passage can support or contradict. "
-    "Do not add a statement that is not in the supplied text."
+    "Do not add a statement that is not in the supplied text. "
+    + DATA_RULE
 )
 
 VERIFY_SYSTEM = (
@@ -29,7 +31,8 @@ VERIFY_SYSTEM = (
     "Use Partially supported when the passage supports only part of the claim. "
     "Use Contradicted when the passage conflicts with the claim. "
     "Otherwise use Insufficient evidence. "
-    "supporting_excerpt and opposing_excerpt must be copied from the passage."
+    "supporting_excerpt and opposing_excerpt must be copied from the passage. "
+    + DATA_RULE
 )
 
 
@@ -118,7 +121,10 @@ def extract_claims(sources: list[dict]) -> dict:
         text = " ".join(str(source.get("text") or source.get("content") or "").split())
         if not url or len(text) < 24:
             continue
-        blocks.append(f"URL: {url}\nTitle: {source.get('title') or ''}\nPassage:\n{text[:2500]}")
+        blocks.append(
+            f"URL: {url}\nTitle: {untrusted(str(source.get('title') or ''))}\n"
+            f"Passage:\n{untrusted(text[:2500])}"
+        )
     if not blocks:
         return {"claims": []}
     batch = parse_model(ClaimBatch, EXTRACT_SYSTEM, "\n\n".join(blocks))
@@ -145,7 +151,7 @@ def verify_claim(claim: str, passage: str) -> dict:
     verdict = parse_model(
         Verdict,
         VERIFY_SYSTEM,
-        f"Claim: {claim_text}\n\nPassage:\n{passage_text[:5000]}",
+        f"Claim: {claim_text}\n\nPassage:\n{untrusted(passage_text[:5000])}",
     )
     return verdict.model_dump()
 

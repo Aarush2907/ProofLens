@@ -7,7 +7,8 @@ def test_health_reports_a_live_database(client):
     assert body["service"] == "ProofLens"
     assert body["environment"] == "test"
     assert body["database"] == "connected"
-    assert body["version"] == "0.4.0"
+    assert body["version"] == "0.5.0"
+    assert body["qdrant"] == "not_configured"
     assert "time" in body
 
 

@@ -1,38 +1,106 @@
 # ProofLens
 
-ProofLens researches a question with five agents, then waits for a person to approve or reject the claims before the report is written. The desk shows the sources, evidence passages, verification, an evidence graph built from the saved rows, and the agent activity from the run itself.
+ProofLens is a research desk that checks a question against sources it actually collected. Five agents search, extract claims, verify those claims against retrieved passages, look for contradictions, and wait for a person to approve or reject the claims before a cited report is written. The desk shows the saved sources, the evidence graph, the live agent activity, and Markdown or PDF exports of that same saved run.
 
-## What works in this milestone
+A high evaluation score, a verified label, or a finished report is not a guarantee that a claim is true outside the passages that were collected.
 
-- A FastAPI backend with configuration, logging, and error responses.
-- A health check at `GET /api/health`.
-- A research workflow: search, extract claims, check them against retrieved passages, and look for disagreements.
-- An MCP server the workflow calls over stdio. The tools are `search_web`, `retrieve_source`, `extract_claims`, `verify_claim`, and `search_evidence`.
-- Qdrant storage for source passages. The fact-checker can search that store for a claim. Passages keep the source id, original URL, title, and research session.
-- Research memory. A fresh copy of a URL is not downloaded again. A passage from an earlier session is returned only when it is similar to the query, and it is labelled with that session. A passage older than the freshness window is marked as possibly outdated.
-- A human review checkpoint. You approve or reject each claim, or send the researcher back with a note. The report is written after you continue.
-- Source records with the original URL, domain, retrieval time, and publication details when the search result included them.
-- Evidence passages linked to the claim and source they were checked against.
-- An evidence graph at `GET /api/research/{id}/graph`, drawn in the desk from those saved relationships.
-- Live agent activity at `GET /api/research/{id}/events`. The desk shows the agent, the current step, and the event history. The events are written by the running workflow.
-- A source record that explains why a page is labelled primary-style, secondary, or unclear. That label is not a reliability score, and it is separate from whether a claim was verified.
-- LangGraph checkpoints so a waiting review can be resumed. PostgreSQL keeps the checkpoint across an API restart. Tests use an in-memory checkpoint for the life of the test process.
+## Problem
 
-A question starts as `running`. It stays `running` with stage `awaiting_review` until you continue. It becomes `completed` when a report is saved, or `failed` when a step stops the run.
+Search answers and model summaries often mix retrieved text with unsupported statements. A reader cannot see which sentence came from which page, which sources disagree, or whether a person looked at the claims before the report was written. ProofLens keeps those steps as data: sources, claims, quotations, disagreements, a review decision, and a report that can only cite the sources that were stored.
 
-## What you need installed
+## Features
 
-- Python 3.11 or newer
-- Node.js 20 or newer
-- PostgreSQL 15 or newer, running locally
-- An OpenAI API key and a Tavily search key, if you want a live research run
-- No separate Qdrant installation. The API stores vectors in `.qdrant` unless `QDRANT_URL` is set. The first live retrieval downloads the embedding model.
+- A LangGraph workflow with a researcher, an extractor, a fact-checker, a contradiction detector, a human review interrupt, and a writer.
+- An MCP server the workflow calls over stdio: `search_web`, `retrieve_source`, `extract_claims`, `verify_claim`, and `search_evidence`.
+- Qdrant storage of source passages, with a separate embedding model from the chat model. A later question can retrieve a similar passage from an earlier session, labelled as memory, or an old copy labelled as possibly outdated.
+- Verdicts of Verified, Partially supported, Contradicted, and Insufficient evidence. A supporting or opposing quotation is kept only when it appears in the passage.
+- An evidence graph built from the saved foreign keys and passages.
+- A review step. The report is not written until every claim is approved or rejected, or the reviewer asks for another search. Rejected claims stay stored and are left out of the writer packet.
+- Server-sent agent activity, including reconnect with `Last-Event-ID`.
+- Token totals and an approximate model cost on the research row, a per-run cost cap, and a limit on how many runs can start.
+- Markdown and PDF export of the saved question, findings, claim groups, sources, contradictions, limitations, and bibliography.
+- A curated evaluation of citation support, verification, retrieval, context relevance, answer overlap, freshness, and statistic backing. Ragas runs only when an API key is configured.
 
-The API still starts if PostgreSQL is down. The health check then reports the database as unavailable, and saving a question returns an error instead of a made-up success.
+## Architecture
 
-Automated tests do not call OpenAI or Tavily. A live run is a separate command, and it skips when the keys are missing.
+```mermaid
+flowchart LR
+  desk[Next.js desk]
+  api[FastAPI]
+  graph[LangGraph]
+  mcp[MCP server stdio]
+  qdrant[Qdrant]
+  db[(PostgreSQL)]
+  desk -->|REST and SSE| api
+  api --> graph
+  graph --> mcp
+  mcp --> qdrant
+  api --> db
+  graph --> db
+```
 
-## Configure
+The HTTP request returns when the question is saved. The graph continues in the background and writes each stage. The desk renders only those saved rows and the events the agents emitted.
+
+The MCP process is a child of the API. It is not a separate container. In Compose, Qdrant is reached over HTTP so the API and the MCP child share one server instead of opening the same on-disk folder.
+
+## Multi-agent workflow
+
+The graph is `researcher`, then `extractor`, then `fact_checker`, then `contradiction_detector`. It then pauses on `review` when a person must decide. After continue, `writer` runs. A retryable tool or model failure is tried once more. A missing key, or a run that passes the cost cap, stops without another model call.
+
+1. The researcher plans one or two queries, searches, drops duplicate URLs, and fetches page text.
+2. The extractor returns claims tied to a retrieved URL. Opinions are labelled and are not treated as facts.
+3. The fact-checker reads each claim beside its passage and any similar stored passage. The quotation must occur in that text.
+4. The contradiction detector stores a disagreement only when two factual claims from different sources cannot both be true. A different date or a different definition is discarded.
+5. Review interrupts the graph. The thread id is the question id. Approving or rejecting must cover every claim. Asking for more research clears the children and returns to the researcher, up to two extra rounds.
+6. The writer drafts from the claims that were not rejected. Citations that were not retrieved are removed.
+
+PostgreSQL checkpoints survive an API restart. The in-memory checkpoint used by tests does not.
+
+## Evidence graph
+
+`GET /api/research/{id}/graph` returns nodes and edges from the saved sources, claims, evidence passages, and contradictions. The desk draws that response. Edges are those stored relationships. The interface does not add a decorative link that the database does not have.
+
+## MCP
+
+`python -m app.mcp.server` speaks MCP over stdio. The research graph uses that server when a test has not substituted its own search and fetch functions. Tool errors come back as tool errors. They are not stored as sources.
+
+Retrieved page text is wrapped in `<untrusted_source>` in the prompt. The wrapper tells the model that the page is data. The fact-checker still checks quotations against the original passage. A page cannot close the wrapper early and then issue an instruction. This is a prompt boundary, not a sandbox. A model can still quote a false or misleading sentence that really appears on the page.
+
+## RAG
+
+Passages are chunked and embedded into the `prooflens_evidence` collection. The default embedder is fastembed with `BAAI/bge-small-en-v1.5`. `OPENAI_MODEL` does not choose that vector model. Tests set `EMBEDDING_PROVIDER=hash` and `QDRANT_PATH=:memory:` so they do not download a model.
+
+A search for the current session uses `RETRIEVAL_MIN_SCORE`. A passage from another session is returned only above `MEMORY_MIN_SCORE` and is marked `from_memory`. A copy older than `MEMORY_FRESH_DAYS` is fetched again, or marked `possibly_outdated` when the fetch fails. Unrelated passages fall under the bar and are not returned.
+
+## Technology
+
+- Python, FastAPI, SQLAlchemy, PostgreSQL, LangGraph
+- The official MCP Python SDK
+- Qdrant and fastembed
+- OpenAI for the chat model, Tavily for search
+- Ragas 0.2.15, imported only for the optional model-judged metrics
+- fpdf2 for PDF export
+- Next.js, React, and Tailwind
+
+## Folder structure
+
+```
+backend/app/api            HTTP routes
+backend/app/research       graph, agents, retrieval, export, persistence
+backend/app/mcp            MCP server, tools, and the stdio client
+backend/app/evaluation     curated dataset, metrics, and the Ragas adapter
+backend/app/models         SQLAlchemy tables
+database/schema.sql        PostgreSQL contract
+frontend                   Next.js desk
+docker                     API and desk Dockerfiles
+docs                       architecture and deployment notes
+```
+
+`explanation.txt` and `scripts/push.ps1` are local files. They are listed in `.gitignore` and are not part of the public tree.
+
+## Installation
+
+You need Python 3.11 or newer, Node.js 20 or newer, and PostgreSQL 15 or newer for a real save. The automated tests do not need PostgreSQL, Qdrant, OpenAI, or Tavily.
 
 From the repository root:
 
@@ -40,33 +108,16 @@ From the repository root:
 Copy-Item .env.example .env
 ```
 
-Edit `.env` if your PostgreSQL user, password, or database name differ. Create the database before the first real save:
+Create the database before the first real save:
 
 ```sql
 CREATE USER prooflens WITH PASSWORD 'prooflens';
 CREATE DATABASE prooflens OWNER prooflens;
 ```
 
-The password in `.env.example` is a local placeholder. Change it if anyone else can reach that database.
+The password in `.env.example` and in `docker-compose.yml` is a local placeholder. Change it if anyone else can reach that database.
 
-For a live run, set these in `.env`. Leave them empty if you only want to save questions and run the automated tests.
-
-```
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4o-mini
-SEARCH_PROVIDER=tavily
-SEARCH_API_KEY=
-EMBEDDING_PROVIDER=fastembed
-EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
-QDRANT_URL=
-QDRANT_PATH=
-```
-
-`OPENAI_MODEL` chooses the chat model. `EMBEDDING_MODEL` chooses the vector model and is not the chat model. `OPENAI_BASE_URL` is optional and is there so a compatible endpoint can be used later without rewriting the agents. `SEARCH_PROVIDER` is `tavily` today. Leave `QDRANT_URL` empty to use the local `.qdrant` directory.
-
-On startup the API creates the research tables if it can connect, and adds `stage` and `error_message` to an older `research_questions` table. The same structure is written out in `database/schema.sql`.
-
-## Run the backend
+Backend:
 
 ```powershell
 cd backend
@@ -76,13 +127,9 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-The API listens on http://localhost:8000. Interactive docs are at http://localhost:8000/docs while `ENVIRONMENT` is not `production`.
+The API listens on http://localhost:8000. Interactive docs are at http://localhost:8000/docs until `ENVIRONMENT` is `production`.
 
-`POST /api/research` saves the question and starts the workflow in the background. The API starts the MCP tool server for that run. The run pauses after claims are checked. `POST /api/research/{id}/review` approves or rejects those claims, or asks for another search. `GET /api/research/{id}` returns the sources, claims, evidence, contradictions, and report saved so far. `GET /api/research/{id}/graph` returns the nodes and edges for the evidence graph. `GET /api/research/{id}/events` streams the agent activity.
-
-## Run the frontend
-
-In a second terminal, from the repository root:
+Frontend, in a second terminal:
 
 ```powershell
 cd frontend
@@ -90,32 +137,94 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. The desk calls http://localhost:8000. To point it somewhere else, create `frontend/.env.local`:
+Open http://localhost:3000. The desk calls http://localhost:8000 unless `frontend/.env.local` sets `NEXT_PUBLIC_API_URL`.
 
-```
-NEXT_PUBLIC_API_URL=http://localhost:8000
+## Environment
+
+The root `.env.example` lists every variable. Environment variables override the file.
+
+- `DATABASE_URL` is PostgreSQL in normal use. Tests set SQLite before the app is imported.
+- `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_BASE_URL` configure the chat model. Leave the key empty to run tests only.
+- `SEARCH_PROVIDER` is `tavily`. `SEARCH_API_KEY` is required for a live search.
+- `EMBEDDING_PROVIDER` is `fastembed` or `hash`. `EMBEDDING_MODEL` is separate from `OPENAI_MODEL`.
+- `QDRANT_URL` empty means the local `.qdrant` directory. Set the URL to use a Qdrant service. Do not point the API and another process at the same local path.
+- `PROMPT_PRICE_PER_MILLION`, `COMPLETION_PRICE_PER_MILLION`, and `MAX_RUN_COST_USD` control the estimate and the cap. The estimate is not a bill.
+- `MAX_CONCURRENT_RUNS` and `MAX_RUN_STARTS` limit new research starts. A waiting review is not counted as a new start.
+
+On startup the API creates tables it can reach and adds missing question columns, including the token and cost columns. `database/schema.sql` is the same contract. There is no Alembic chain.
+
+## Docker
+
+From the repository root, with Docker installed:
+
+```powershell
+docker compose up --build
 ```
 
-Start research from the desk. The run page reloads while the status is `running` and shows only the rows the API has saved. The activity panel follows the event stream and reconnects if the stream drops. When the stage is `awaiting_review`, approve or reject every claim, then continue. The graph and the claim cards use the same saved passages.
+Compose starts PostgreSQL 16, Qdrant, the API, and the desk. Health checks gate the API on Postgres and Qdrant. Volumes keep the database, Qdrant storage, and the embedding cache. The desk is built with `NEXT_PUBLIC_API_URL=http://localhost:8000`, which is the URL the browser uses. Pass `OPENAI_API_KEY` and `SEARCH_API_KEY` in the shell if you want a live run. They are not copied into the image. `.env`, `explanation.txt`, virtual environments, and local databases are in `.dockerignore`.
+
+This Compose file is the local packaging. It is not evidence that a hosted deployment was completed. See `docs/deployment.md`.
+
+## API
+
+| Method | Path | Behaviour |
+| --- | --- | --- |
+| GET | `/api/health` | Database and, when `QDRANT_URL` is set, Qdrant. `503` when the database is down or a configured Qdrant URL does not answer. |
+| GET | `/api/research` | Newest questions, up to the `limit` query. |
+| POST | `/api/research` | Saves a question and starts the graph. `429` when the start cap is reached. |
+| GET | `/api/research/{id}` | Question, sources, claims, evidence, contradictions, report, and token estimate. |
+| GET | `/api/research/{id}/graph` | Evidence-graph nodes and edges. |
+| POST | `/api/research/{id}/review` | Continue with one decision per claim, or `research_more`. `409` when the run is not waiting. `422` when a decision is missing. |
+| GET | `/api/research/{id}/events` | Server-sent activity. Send `Last-Event-ID` to resume. |
+| GET | `/api/research/{id}/export.md` | Markdown download of the saved run. |
+| GET | `/api/research/{id}/export.pdf` | PDF download of the saved run. |
+
+A question is `running` while the graph works and while it waits at `awaiting_review`. It becomes `completed` when a report is saved, or `failed` when a step stops the run.
+
+## Screenshots
+
+No screenshots are stored in this repository. The desk is the Next.js app at `/`, `/history`, and `/research/[id]`.
+
+## Evaluation
+
+From `backend`, with the virtual environment active:
+
+```powershell
+python -m app.evaluation
+```
+
+The dataset has seven labelled rows: a correct claim, an incorrect claim quoted from a true sentence, contradictory sources, a passage that is too short, a retrieval time outside the freshness window, a misleading excerpt that names a figure in order to deny it, and a statistic whose number is not in the excerpt.
+
+The deterministic metrics are:
+
+- **Citation support.** The quotation the verdict relies on occurs in the passage.
+- **Claim verification.** After grounding, the status matches the label.
+- **Retrieval quality.** The hashing embedder ranks the labelled passage above an unrelated passage and above the retrieval floor.
+- **Context relevance.** The question shares more words with the labelled passage than with the distractor.
+- **Answer grounding.** How many content words of the answer appear in the passages. This is overlap, not entailment.
+- **Source freshness.** The product's freshness rule matches the label for that timestamp.
+- **Statistic backing.** For a Verified or Partially supported statistic, every number in the claim appears in the excerpt.
+
+Ragas faithfulness, answer relevancy, and context precision are requested only when `OPENAI_API_KEY` is set. If the key is missing, or the library cannot be imported, the result is `ran: false` and no score is filled in. Ragas 0.2.15 is pinned because later releases need a C++ build of scikit-network on this machine. Current LangChain no longer ships a class that release imports, so `app.evaluation.ragas_eval` installs a placeholder for that import and does not call it.
+
+These scores measure the curated rows and the quotation rules. A high score does not guarantee factual correctness. In particular, citation support stays high when a false claim quotes a true sentence, and statistic backing does not notice a sentence that names a number in order to deny it. The claim-verification label is what fails those rows.
 
 ## Tests
 
-Backend, from `backend` with the virtual environment active:
+Backend, from `backend`:
 
 ```powershell
 pytest
 ```
 
-Those tests use an in-memory SQLite database, an in-memory Qdrant store, a hashing embedder, and stand-ins for search and the model. They do not need PostgreSQL, OpenAI, Tavily, or a downloaded embedding model. One test starts the MCP server as a subprocess. The application code still targets PostgreSQL and fastembed when you run it.
-
-To call the real APIs once, from `backend`:
+The suite uses in-memory SQLite, in-memory Qdrant, the hashing embedder, and stand-ins for search and the model. It covers the API, the agents, the graph, the database contract, MCP, retrieval, export, the cost and start limits, and the curated evaluation. One live test is marked `e2e` and skips without both API keys.
 
 ```powershell
 pytest -m e2e
 python -m app.research.live "What evidence links consistent sleep to memory consolidation in adults?"
 ```
 
-`pytest -m e2e` skips unless both `OPENAI_API_KEY` and `SEARCH_API_KEY` are set. The live command prints the saved sources, claims, checks, disagreements, and report as JSON. It exits with an error if a key is missing or a step fails. It does not fill in a report when the tools fail.
+The live command exits with an error if a key is missing or a step fails. It does not invent a report.
 
 Frontend, from `frontend`:
 
@@ -123,19 +232,31 @@ Frontend, from `frontend`:
 npm test
 ```
 
-## Layout
+## Security
 
-```
-backend/app/research/   LangGraph workflow, the five agents, review checkpoint, search, retrieval, and persistence
-backend/app/mcp/       MCP server, tool schemas, and the stdio client
-backend/               FastAPI application, settings, database access, and API tests
-frontend/              Next.js research desk
-database/              PostgreSQL schema
-docs/                  Architecture notes
-```
+- Secrets belong in the environment or a local `.env`. `.env` is gitignored. Images do not copy it.
+- Health and request logs record status codes, the database dialect, and token counts. They do not record the API key, the prompt body, or the page text. Database connection failures log the exception type.
+- Question text is length-checked. List limits are bounded. Research ids are UUIDs. SQL is issued through SQLAlchemy parameters or fixed `ALTER` statements, not by concatenating the question into SQL.
+- New runs are limited. Model calls time out, and the OpenAI client retries once before the graph's own retry. The cost cap is not retried.
+- Web pages are untrusted. They are wrapped before they enter a prompt and cannot close that wrapper. They still cannot be allowed to override the agent instructions by any stronger guarantee than the model following that wrapper. Tool execution is the fixed MCP tool list, not code taken from a page.
+- Each graph thread id is the question id. Memory hits from another session are labelled and use a higher similarity bar. Export citations have to match a source saved on that session.
+- Remaining limits: there is no login, so anyone who can call the API can read saved research. The cost figure can drift from the provider bill. Prompt wrapping is not a sandbox. A quotation check does not detect sarcasm or a denial that still contains the quoted words. TLS, a real database password, and closed database ports are required on any shared host and are not configured by the local Compose file.
 
-`explanation.txt` and `scripts/push.ps1` are local files. They are listed in `.gitignore` and are not part of the repository.
+## Known limitations
 
-## Not in this milestone
+- Live research needs OpenAI and Tavily keys. Without them the workflow stops with an error instead of filling in sources.
+- Verification is against collected text. A verified claim can still be false if the page is false.
+- The freshness window and the similarity floors are settings, not a judgment that a page is current or authoritative.
+- Source-quality labels are rules about the publisher, author, date, and passage. They are not a reliability score.
+- The activity log lives in the API process. A restart drops events that were not already shown. The saved rows remain.
+- PDF text is written in Helvetica. Characters outside Latin-1 are replaced.
+- Ragas model-judged metrics are optional and were not given a score in an environment without an API key.
+- Docker Compose is prepared here. A public deployment was not performed or verified.
 
-Evaluation scores and deployment packaging come later. They are not stubbed as if they already worked. The review step is the claim checkpoint before the report, not a scored evaluation. Source-quality labels are still not a reliability score.
+## Further work
+
+- Accounts, so one session cannot read another.
+- A migration tool once the schema needs changes that `create_all` cannot express.
+- A hosted run with TLS, backups, and a checked health endpoint.
+- A stronger check for quotations that appear inside a denial.
+- Evaluation rows taken from finished research sessions, still without treating the score as proof.

@@ -23,6 +23,9 @@ class ResearchQuestionRead(BaseModel):
     status: str
     stage: str = "submitted"
     error_message: str | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    estimated_cost_usd: float = 0
     created_at: datetime
     updated_at: datetime
 

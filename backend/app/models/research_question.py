@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, String, Text, Uuid
+from sqlalchemy import CheckConstraint, DateTime, Float, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -36,6 +36,9 @@ class ResearchQuestion(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=SUBMITTED)
     stage: Mapped[str] = mapped_column(String(32), nullable=False, default=SUBMITTED)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    estimated_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, createResearchQuestion, fetchHealth, fetchResearchQuestions, fetchResearchSession } from "../lib/api";
+import { ApiError, createResearchQuestion, exportHref, fetchHealth, fetchResearchQuestions, fetchResearchSession } from "../lib/api";
 
 const question = {
   id: "6f1c0a4e-2b4d-4e2a-9c1a-0b1d2e3f4a5b",
@@ -14,6 +14,15 @@ afterEach(() => {
 });
 
 describe("research API client", () => {
+  it("builds export links from the configured API origin", () => {
+    expect(exportHref(question.id, "md")).toBe(
+      `http://localhost:8000/api/research/${question.id}/export.md`,
+    );
+    expect(exportHref(question.id, "pdf")).toBe(
+      `http://localhost:8000/api/research/${question.id}/export.pdf`,
+    );
+  });
+
   it("reads a degraded health report without treating it as a crash", async () => {
     vi.stubGlobal(
       "fetch",

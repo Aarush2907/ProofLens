@@ -1,6 +1,7 @@
 from app.research.activity import emit
 from app.research.checks import filter_contradictions
 from app.research.contracts import DisagreementBatch
+from app.research.safety import DATA_RULE, untrusted
 
 
 SYSTEM = (
@@ -9,7 +10,8 @@ SYSTEM = (
     "Do not treat a different publication date, a different definition, or a different population "
     "as a contradiction. "
     "Use kind different_definition or different_publication_date when that is the only difference, "
-    "and those will be discarded."
+    "and those will be discarded. "
+    + DATA_RULE
 )
 
 
@@ -32,7 +34,7 @@ def find_contradictions(state: dict, model) -> dict:
 
     lines = []
     for claim in comparable:
-        lines.append(f"{claim['id']} | {claim['source_url']} | {claim['text']}")
+        lines.append(f"{claim['id']} | {claim['source_url']} | {untrusted(claim['text'])}")
     batch = model(DisagreementBatch, SYSTEM, "\n".join(lines))
     disagreements = [item.model_dump() for item in batch.disagreements]
     contradictions = filter_contradictions(disagreements, state["claims"])

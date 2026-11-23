@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 
 from langgraph.errors import GraphInterrupt
@@ -10,6 +11,7 @@ from app.research.checkpointer import get_checkpointer
 from app.research.graph import build_graph
 from app.research.persist import save_progress
 from app.research.state import initial_state
+from app.research.usage import current_usage, estimate_cost, reset_usage, start_usage
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,8 @@ def execute_research(question_id: uuid.UUID) -> None:
         if record is None:
             return
         question = record.question
+        prompt_tokens = record.prompt_tokens or 0
+        completion_tokens = record.completion_tokens or 0
         record.status = "running"
         record.stage = "researching"
         record.error_message = None
@@ -33,13 +37,7 @@ def execute_research(question_id: uuid.UUID) -> None:
     finally:
         db.close()
 
-    graph = build_graph(checkpointer=get_checkpointer(), pause_for_review=True)
-    token = bind_session(str(question_id))
-    try:
-        emit("research_started", "Research started.", agent="workflow", session_id=str(question_id))
-        run_until_pause(graph, question_id, question)
-    finally:
-        reset_session(token)
+    _run_tracked(question_id, question, prompt_tokens, completion_tokens, resume=None)
 
 
 def resume_research(question_id: uuid.UUID, decision: dict) -> None:
@@ -54,18 +52,45 @@ def resume_research(question_id: uuid.UUID, decision: dict) -> None:
         if record is None:
             return
         question = record.question
+        prompt_tokens = record.prompt_tokens or 0
+        completion_tokens = record.completion_tokens or 0
         record.status = "running"
         record.error_message = None
         db.commit()
     finally:
         db.close()
 
+    _run_tracked(question_id, question, prompt_tokens, completion_tokens, resume=decision)
+
+
+def _run_tracked(
+    question_id: uuid.UUID,
+    question: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    resume: dict | None,
+) -> None:
     graph = build_graph(checkpointer=get_checkpointer(), pause_for_review=True)
-    token = bind_session(str(question_id))
+    session_token = bind_session(str(question_id))
+    usage_token = start_usage(prompt_tokens, completion_tokens)
+    started = time.perf_counter()
+    logger.info("Research session %s started", question_id)
     try:
-        run_until_pause(graph, question_id, question, resume=decision)
+        if resume is None:
+            emit("research_started", "Research started.", agent="workflow", session_id=str(question_id))
+        run_until_pause(graph, question_id, question, resume=resume)
     finally:
-        reset_session(token)
+        usage = current_usage()
+        logger.info(
+            "Research session %s stopped duration_seconds=%.2f prompt_tokens=%s completion_tokens=%s estimated_cost_usd=%.6f",
+            question_id,
+            time.perf_counter() - started,
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            estimate_cost(usage.prompt_tokens, usage.completion_tokens),
+        )
+        reset_session(session_token)
+        reset_usage(usage_token)
 
 
 def run_until_pause(graph, question_id: uuid.UUID, question: str, resume: dict | None = None) -> dict:

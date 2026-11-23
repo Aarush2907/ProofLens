@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS research_questions (
     status VARCHAR(32) NOT NULL,
     stage VARCHAR(32) NOT NULL DEFAULT 'submitted',
     error_message TEXT,
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    estimated_cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT ck_research_questions_question_not_blank CHECK (length(trim(question)) > 0)
@@ -17,6 +20,9 @@ CREATE TABLE IF NOT EXISTS research_questions (
 
 ALTER TABLE research_questions ADD COLUMN IF NOT EXISTS stage VARCHAR(32) DEFAULT 'submitted';
 ALTER TABLE research_questions ADD COLUMN IF NOT EXISTS error_message TEXT;
+ALTER TABLE research_questions ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE research_questions ADD COLUMN IF NOT EXISTS completion_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE research_questions ADD COLUMN IF NOT EXISTS estimated_cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS ix_research_questions_created_at
     ON research_questions (created_at);

@@ -1,6 +1,7 @@
 from app.research.activity import emit
 from app.research.checks import filter_report
 from app.research.contracts import ReportDraft
+from app.research.safety import DATA_RULE, untrusted
 
 
 SYSTEM = (
@@ -8,7 +9,8 @@ SYSTEM = (
     "Every finding must cite source URLs from the source list. "
     "Do not present an unverified claim as established. "
     "Explain what is uncertain and what the collected material cannot show. "
-    "Do not add facts that are not in the input."
+    "Do not add facts that are not in the input. "
+    + DATA_RULE
 )
 
 
@@ -44,7 +46,7 @@ def _annotated(state: dict) -> list[dict]:
 def _packet(state: dict) -> str:
     lines = [f"Question: {state['question']}", "", "Sources:"]
     for source in state.get("sources") or []:
-        lines.append(f"- {source.get('title', '')} | {source['url']}")
+        lines.append(f"- {untrusted(source.get('title', ''))} | {source['url']}")
     lines.append("")
     lines.append("Claims:")
     verdicts = {item["claim_id"]: item for item in state.get("verifications") or []}
@@ -55,7 +57,7 @@ def _packet(state: dict) -> str:
             continue
         verdict = verdicts.get(claim["id"], {})
         lines.append(
-            f"- {claim['text']} | {claim['kind']} | {claim['source_url']} | {verdict.get('status', 'unchecked')}"
+            f"- {untrusted(claim['text'])} | {claim['kind']} | {claim['source_url']} | {verdict.get('status', 'unchecked')}"
         )
     lines.append("")
     lines.append("Disagreements:")

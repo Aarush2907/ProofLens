@@ -3,12 +3,14 @@ import json
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal, get_db
 from app.core.errors import AppError
 from app.research.activity import activity_log
+from app.research.export import render_markdown, render_pdf
+from app.research.limits import get_run_limiter
 from app.models.research_question import ResearchQuestion
 from app.schemas.research import (
     EvidenceGraphRead,
@@ -46,8 +48,19 @@ def create_question(
     db: Session = Depends(get_db),
     run_research=Depends(get_research_runner),
 ) -> ResearchQuestion:
-    record = create_research_question(db, payload.question)
-    background.add_task(run_research, record.id)
+    limiter = get_run_limiter()
+    if not limiter.try_acquire():
+        raise AppError(
+            "Too many research runs were started. Wait a few minutes and try again.",
+            status_code=429,
+            code="rate_limited",
+        )
+    try:
+        record = create_research_question(db, payload.question)
+    except Exception:
+        limiter.release()
+        raise
+    background.add_task(_run_and_release, run_research, record.id)
     return record
 
 
@@ -95,6 +108,26 @@ def review_question(
     return record
 
 
+@router.get("/{question_id}/export.md")
+def export_markdown(question_id: uuid.UUID, db: Session = Depends(get_db)) -> Response:
+    session = load_research_session(db, question_id)
+    return Response(
+        content=render_markdown(session),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="prooflens-{question_id}.md"'},
+    )
+
+
+@router.get("/{question_id}/export.pdf")
+def export_pdf(question_id: uuid.UUID, db: Session = Depends(get_db)) -> Response:
+    session = load_research_session(db, question_id)
+    return Response(
+        content=render_pdf(session),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="prooflens-{question_id}.pdf"'},
+    )
+
+
 @router.get("/{question_id}/events")
 async def stream_activity(question_id: uuid.UUID, request: Request) -> StreamingResponse:
     exists = await asyncio.to_thread(_question_exists, question_id)
@@ -110,6 +143,13 @@ async def stream_activity(question_id: uuid.UUID, request: Request) -> Streaming
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _run_and_release(run, question_id: uuid.UUID) -> None:
+    try:
+        run(question_id)
+    finally:
+        get_run_limiter().release()
 
 
 def _question_exists(question_id: uuid.UUID) -> bool:

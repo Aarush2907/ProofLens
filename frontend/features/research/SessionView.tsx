@@ -52,6 +52,11 @@ export function SessionView({ id }: { id: string }) {
         {session.status === "running" ? (
           <p className="mt-2 text-sm text-muted">This page reloads when the next saved step arrives.</p>
         ) : null}
+        {session.estimated_cost_usd && session.estimated_cost_usd > 0 ? (
+          <p className="mt-2 text-sm text-muted">
+            Approximate model cost for this run: ${session.estimated_cost_usd.toFixed(4)}. This is an estimate, not a bill.
+          </p>
+        ) : null}
         {session.error_message && session.stage !== "awaiting_review" ? (
           <p className="mt-4 text-sm text-danger" role="alert">
             {session.error_message}
@@ -82,7 +87,7 @@ export function SessionView({ id }: { id: string }) {
         <ContradictionList items={session.contradictions} />
       </Section>
       <Section title="Report" id="report">
-        <ReportView report={session.report} />
+        <ReportView report={session.report} questionId={session.id} />
       </Section>
     </div>
   );

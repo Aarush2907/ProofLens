@@ -1,10 +1,36 @@
+import { exportHref } from "@/lib/api";
 import type { ResearchReport } from "@/types/api";
 
-export function ReportView({ report }: { report: ResearchReport | null }) {
-  if (report === null) {
-    return <p className="text-sm text-muted">No report has been saved for this run.</p>;
-  }
+export function ReportView({
+  report,
+  questionId,
+}: {
+  report: ResearchReport | null;
+  questionId: string;
+}) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted">
+        <a className="text-brass hover:text-foreground" href={exportHref(questionId, "md")}>
+          Download Markdown
+        </a>
+        <span aria-hidden="true"> · </span>
+        <a className="text-brass hover:text-foreground" href={exportHref(questionId, "pdf")}>
+          Download PDF
+        </a>
+      </p>
+      {report === null ? (
+        <p className="text-sm text-muted">
+          No report has been saved for this run. The download still includes the question and any evidence saved so far.
+        </p>
+      ) : (
+        <ReportBody report={report} />
+      )}
+    </div>
+  );
+}
 
+function ReportBody({ report }: { report: ResearchReport }) {
   return (
     <article className="space-y-6 rounded-2xl border border-line bg-panel px-5 py-5 sm:px-6">
       <p className="font-serif text-xl leading-8 text-foreground">{report.summary}</p>

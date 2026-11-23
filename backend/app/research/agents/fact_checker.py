@@ -1,6 +1,7 @@
 from app.research.activity import emit
 from app.research.checks import ground_verdict, passage_contains
 from app.research.contracts import Verdict
+from app.research.safety import DATA_RULE, untrusted
 
 
 SYSTEM = (
@@ -9,7 +10,8 @@ SYSTEM = (
     "Use Partially supported when the passage supports only part of the claim. "
     "Use Contradicted when the passage conflicts with the claim. "
     "Otherwise use Insufficient evidence. "
-    "supporting_excerpt and opposing_excerpt must be copied from the passage."
+    "supporting_excerpt and opposing_excerpt must be copied from the passage. "
+    + DATA_RULE
 )
 
 
@@ -86,7 +88,7 @@ def _passage(source: dict | None) -> str:
 
 
 def _prompt(claim: dict, passage: str) -> str:
-    return f"Claim: {claim['text']}\n\nPassage:\n{passage[:5000]}"
+    return f"Claim: {claim['text']}\n\nPassage:\n{untrusted(passage[:5000])}"
 
 
 def _opinion(claim_id: str) -> dict:

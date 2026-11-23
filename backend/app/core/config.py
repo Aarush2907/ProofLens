@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "ProofLens"
-    app_version: str = "0.4.0"
+    app_version: str = "0.5.0"
     environment: str = "development"
     log_level: str = "INFO"
     api_prefix: str = "/api"
@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     openai_base_url: str = ""
+    openai_timeout_seconds: float = 40
+    # Approximate published prices for gpt-4o-mini, in USD per million tokens.
+    # They are an estimate for the cost cap, not a provider invoice.
+    prompt_price_per_million: float = 0.15
+    completion_price_per_million: float = 0.60
+    max_run_cost_usd: float = 1.0
+    max_concurrent_runs: int = 3
+    max_run_starts: int = 40
+    run_start_window_seconds: int = 600
+    qdrant_health_timeout_seconds: float = 2
     search_provider: str = "tavily"
     search_api_key: str = ""
     agent_max_attempts: int = 2

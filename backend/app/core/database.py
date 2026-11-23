@@ -18,12 +18,13 @@ class Base(DeclarativeBase):
 
 def engine_options(database_url: str) -> dict:
     if database_url.startswith("sqlite"):
-        # StaticPool keeps an in-memory SQLite database on one connection.
-        # Tests use that. PostgreSQL keeps a normal connection pool.
-        return {
-            "connect_args": {"check_same_thread": False},
-            "poolclass": StaticPool,
-        }
+        # One shared connection keeps an in-memory database visible to every
+        # session. A file database must not share that connection: concurrent
+        # requests then corrupt reads. PostgreSQL keeps a normal pool.
+        options = {"connect_args": {"check_same_thread": False, "timeout": 5}}
+        if ":memory:" in database_url:
+            options["poolclass"] = StaticPool
+        return options
     return {
         "pool_pre_ping": True,
         "connect_args": {"connect_timeout": POSTGRES_CONNECT_TIMEOUT_SECONDS},
@@ -73,6 +74,13 @@ def _add_missing_question_columns() -> None:
         )
     if "error_message" not in present:
         statements.append("ALTER TABLE research_questions ADD COLUMN error_message TEXT")
+    for name, statement in {
+        "prompt_tokens": "ALTER TABLE research_questions ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0",
+        "completion_tokens": "ALTER TABLE research_questions ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0",
+        "estimated_cost_usd": "ALTER TABLE research_questions ADD COLUMN estimated_cost_usd FLOAT NOT NULL DEFAULT 0",
+    }.items():
+        if name not in present:
+            statements.append(statement)
     statements.extend(_missing_result_columns(inspector))
     if not statements:
         return
@@ -115,5 +123,5 @@ def database_is_reachable() -> bool:
     except Exception as exc:
         # A health check has to report the failure instead of crashing the API.
         # Startup still logs a full traceback when table creation itself fails.
-        logger.warning("Database is not reachable: %s", exc)
+        logger.warning("Database is not reachable: %s", exc.__class__.__name__)
         return False

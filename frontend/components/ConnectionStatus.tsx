@@ -11,6 +11,9 @@ export function ConnectionStatus() {
   if (unreachable) {
     label = "API unavailable";
     tone = "bg-danger";
+  } else if (report?.database === "connected" && report.qdrant === "unavailable") {
+    label = "API online · Database connected · Qdrant unavailable";
+    tone = "bg-brass";
   } else if (report?.database === "connected") {
     label = "API online · Database connected";
     tone = "bg-ok";

@@ -14,6 +14,7 @@ from app.models.results import (
     VerificationRecord,
 )
 from app.research.evidence import evidence_for
+from app.research.usage import current_usage, estimate_cost, usage_is_active
 
 
 def save_progress(question_id: uuid.UUID, state: dict, finished: bool = False) -> None:
@@ -34,6 +35,11 @@ def save_progress(question_id: uuid.UUID, state: dict, finished: bool = False) -
         else:
             record.stage = state.get("stage") or "researching"
             record.error_message = None
+        if usage_is_active():
+            usage = current_usage()
+            record.prompt_tokens = usage.prompt_tokens
+            record.completion_tokens = usage.completion_tokens
+            record.estimated_cost_usd = estimate_cost(usage.prompt_tokens, usage.completion_tokens)
         db.commit()
     except Exception:
         db.rollback()

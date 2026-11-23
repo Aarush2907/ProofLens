@@ -84,9 +84,9 @@ The Next.js app is a desk, not a chat transcript.
 
 - `/` is the composer and the five most recent questions.
 - `/history` is the longer list. Each question links to its run.
-- `/research/[id]` shows live agent activity, the review form, evidence graph, sources, claims, verification, contradictions, and report. It reloads while the status is `running`. The graph is loaded from `GET /api/research/{id}/graph`. Activity comes from the event stream, which reconnects with `Last-Event-ID`.
+- `/research/[id]` shows live agent activity, the review form, evidence graph, sources, claims, verification, contradictions, and report. It reloads while the status is `running`. The graph is loaded from `GET /api/research/{id}/graph`. Activity comes from the event stream, which reconnects with `Last-Event-ID`. Markdown and PDF downloads call `GET /api/research/{id}/export.md` and `export.pdf`.
 - `lib/api.ts` is the only place that calls the backend.
-- The header polls `/api/health` and shows whether the API and the database are actually reachable.
+- The header polls `/api/health` and shows whether the API and the database are actually reachable. A configured Qdrant URL that does not answer is shown as unavailable. An empty `QDRANT_URL` is local file mode and is not probed.
 
 Empty lists stay empty. The activity list only shows events the backend recorded.
 
@@ -96,6 +96,20 @@ The API starts `python -m app.mcp.server` and talks to it over stdio. The five t
 
 Qdrant stores one passage per chunk, with the source id, URL, title, and research session id. The default embedding model is `BAAI/bge-small-en-v1.5` through fastembed, configured separately from `OPENAI_MODEL`. Tests set `EMBEDDING_PROVIDER=hash` and `QDRANT_PATH=:memory:` so they do not download a model or need a Qdrant service. A fresh stored copy of a URL is reused. A copy older than `MEMORY_FRESH_DAYS` is fetched again, or marked possibly outdated when the fetch fails.
 
-## Deliberately not here
+Page text is wrapped in `<untrusted_source>` before it is placed in a prompt. The fact-checker still grounds a quotation against the original passage, not against the wrapped copy. A source cannot close that wrapper early, and the wrapper is not an instruction.
 
-Evaluation scores and deployment packaging belong to a later milestone. They are not stubbed as if they already worked.
+## Evaluation, cost, and export
+
+`python -m app.evaluation` scores a curated dataset with deterministic checks: citation support, grounded verification, retrieval rank, context overlap, answer overlap, source freshness, and whether a supported statistic's numbers appear in the excerpt. Ragas faithfulness, answer relevancy, and context precision run only when `OPENAI_API_KEY` is set and the library imports. If either is missing, the report says the score was not run. A high score does not mean a claim is true.
+
+Each model call records token counts. The question row stores those counts and an approximate USD cost from `PROMPT_PRICE_PER_MILLION` and `COMPLETION_PRICE_PER_MILLION`. A run that passes `MAX_RUN_COST_USD` stops and is not retried. `POST /api/research` returns 429 when too many runs are already active or were started in the current window.
+
+Markdown and PDF exports are built from the saved session. A citation that is not one of the saved sources is omitted. The files can be downloaded before the writer finishes.
+
+## Deployment packaging
+
+`docker-compose.yml` starts PostgreSQL, Qdrant, the API, and the desk. The MCP server stays a stdio child of the API. It is not a fifth container. Images do not contain `.env` or `explanation.txt`. Hosting choices are in `docs/deployment.md`. This repository does not claim that a public deployment has been verified.
+
+## Still not in the product
+
+There is no numeric source-reliability score. The review step is a person's decision, not an evaluation score. Live research still needs an OpenAI key and a Tavily key.

@@ -25,3 +25,5 @@ def test_postgres_schema_matches_the_model():
     assert "published_on TEXT" in schema
     assert "stage VARCHAR(32)" in schema
     assert "error_message TEXT" in schema
+    assert "prompt_tokens INTEGER" in schema
+    assert "estimated_cost_usd" in schema

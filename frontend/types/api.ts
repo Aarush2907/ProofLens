@@ -14,6 +14,7 @@ export type HealthReport = {
   service: string;
   environment: string;
   database: "connected" | "unavailable";
+  qdrant?: "connected" | "unavailable" | "not_configured";
   version: string;
   time: string;
 };
@@ -24,6 +25,9 @@ export type ResearchQuestion = {
   status: string;
   stage?: string;
   error_message?: string | null;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  estimated_cost_usd?: number;
   created_at: string;
   updated_at: string;
 };

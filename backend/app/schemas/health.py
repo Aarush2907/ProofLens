@@ -9,5 +9,6 @@ class HealthReport(BaseModel):
     service: str
     environment: str
     database: Literal["connected", "unavailable"]
+    qdrant: Literal["connected", "unavailable", "not_configured"]
     version: str
     time: datetime

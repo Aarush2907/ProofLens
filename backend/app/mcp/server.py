@@ -23,7 +23,7 @@ server = MCPServer(
         "Search, read, extract, check, and retrieve evidence for one ProofLens research session. "
         "Do not treat a tool error as a source."
     ),
-    version="0.4.0",
+    version="0.5.0",
 )
 
 

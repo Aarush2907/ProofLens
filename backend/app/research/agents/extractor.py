@@ -4,6 +4,7 @@ from app.core.config import get_settings
 from app.research.activity import emit
 from app.research.checks import filter_claims
 from app.research.contracts import ClaimBatch
+from app.research.safety import DATA_RULE, untrusted
 
 
 SYSTEM = (
@@ -11,7 +12,8 @@ SYSTEM = (
     "Copy source_url from the sources. "
     "Use kind opinion for judgments and predictions. "
     "Use fact, statistic, or date for statements a passage can support or contradict. "
-    "Do not add a statement that is not in the supplied text."
+    "Do not add a statement that is not in the supplied text. "
+    + DATA_RULE
 )
 
 
@@ -54,6 +56,7 @@ def _source_packet(sources: list[dict]) -> str:
     for source in sources:
         passage = source.get("content") or source.get("snippet") or ""
         blocks.append(
-            f"URL: {source['url']}\nTitle: {source.get('title', '')}\nPassage:\n{passage[:2500]}"
+            f"URL: {source['url']}\nTitle: {untrusted(source.get('title', ''))}\n"
+            f"Passage:\n{untrusted(passage[:2500])}"
         )
     return "\n\n".join(blocks)
