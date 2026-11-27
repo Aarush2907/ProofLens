@@ -164,7 +164,7 @@ docker compose up --build
 
 Compose starts PostgreSQL 16, Qdrant, the API, and the desk. Health checks gate the API on Postgres and Qdrant, and the desk on the API. The API image runs as a normal user, and Qdrant is pinned to a release the client library accepts. Volumes keep the database, Qdrant storage, and the embedding cache. The desk is built with `NEXT_PUBLIC_API_URL=http://localhost:8000`, which is the URL the browser uses. Compose sets `REQUIRE_USER_KEYS=true`, so enter your own OpenAI and Tavily keys under "API keys" on the desk before you start a run. To use server-side keys on a private install instead, set `REQUIRE_USER_KEYS=false` and pass `OPENAI_API_KEY` and `SEARCH_API_KEY` in the shell. Keys are never copied into the image. `.env`, `explanation.txt`, virtual environments, and local databases are in `.dockerignore`.
 
-This Compose file is the local packaging. It was built and started once with Docker Desktop on Windows: all four services reached healthy, `/api/health` reported PostgreSQL and Qdrant connected, the API ran as a non-root user, and a run with placeholder keys was saved and failed cleanly with a key-rejected message, and a run with real OpenAI and Tavily keys completed (see Results from a real run). A hosted deployment has not been done. See `docs/deployment.md`.
+This Compose file is the local packaging. It was built and started with Docker Desktop on Windows. All four services reached healthy, `/api/health` reported PostgreSQL and Qdrant connected, and the API ran as a non-root user. A run with placeholder keys was saved and failed with a key-rejected message. A run with real OpenAI and Tavily keys completed (see Results from a real run). A hosted deployment has not been done. See `docs/deployment.md`.
 
 ## API
 
@@ -241,6 +241,7 @@ What the run showed:
 - The "Tuesday to Thursday" finding is labelled partly supported although both claims taken from its cited source were checked as Insufficient evidence. This run predates a fix: a partly supported finding now needs a cited source with at least one Verified or Partially supported claim, and is otherwise shown as uncertain.
 
 Not run: the curated evaluation (`python -m app.evaluation`) was not run against this stack, and no Ragas score exists. This was a single run, so it says nothing about accuracy or speed in general.
+
 ## Tests
 
 Backend, from `backend`:
